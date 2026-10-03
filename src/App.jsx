@@ -1,3 +1,14 @@
+async function getAccessToken(clientId, clientSecret) {
+  const res = await fetch('http://localhost:3001/api/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ clientId, clientSecret }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to authenticate');
+  return data.access_token;
+}
+
 function ResultCard({ track, isrc }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = async () => {
