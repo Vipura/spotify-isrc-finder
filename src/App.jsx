@@ -1,3 +1,12 @@
+async function getTrackData(trackId, token) {
+  const res = await fetch(`http://localhost:3001/api/track/${trackId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to fetch track details');
+  return data;
+}
+
 async function getAccessToken(clientId, clientSecret) {
   const res = await fetch('http://localhost:3001/api/token', {
     method: 'POST',
