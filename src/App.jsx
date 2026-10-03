@@ -1,3 +1,28 @@
+function ResultCard({ track, isrc }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(isrc);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (e) {}
+  };
+  return (
+    <div className="result-section">
+      <div className="result-card">
+        <div className="result-card-inner">
+          <TrackInfo track={track} />
+          <div className="result-label">ISRC Code</div>
+          <div className="isrc-display">{isrc}</div>
+          <button className={`copy-btn ${copied ? 'copied' : ''}`} onClick={handleCopy}>
+            {copied ? 'Copied!' : 'Copy to Clipboard'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TrackInfo({ track }) {
   const albumArt = track.album?.images?.[1]?.url || track.album?.images?.[0]?.url;
   const artists = track.artists?.map((a) => a.name).join(', ');
