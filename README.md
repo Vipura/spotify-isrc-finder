@@ -1,42 +1,16 @@
-# Spotify ISRC Finder 🎵
+# React + Vite
 
-A sleek, modern React + Express web application to instantly find and extract the **ISRC (International Standard Recording Code)** from any Spotify track link or ID.
+This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
-![ISRC Finder](src/assets/hero.png)
+Currently, two official plugins are available:
 
-## ✨ Features
-- **Instant ISRC Lookup**: Paste any Spotify song link (`https://open.spotify.com/track/...`), URI, or 22-character ID.
-- **Glassmorphism UI**: Beautiful dark theme crafted with smooth gradients, responsive layout, and subtle micro-animations.
-- **One-Click Copy**: Copy the ISRC code to clipboard with visual confirmation.
-- **Metadata Card**: Displays album artwork, song title, and artist details.
-- **Local Credential Storage**: Securely stores your Spotify Client ID and Client Secret in browser localStorage.
-- **Corporate Proxy & Firewall Bypass**: Custom backend proxy powered by Undici ensures uninterrupted API calls.
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
 
-## 🚀 Getting Started
+## React Compiler
 
-### 1. Prerequisites
-- Node.js (v18 or later)
-- Spotify Developer Account (for Client ID & Secret)
+The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
 
-### 2. Installation
-```bash
-npm install
-```
+## Expanding the Oxlint configuration
 
-### 3. Run Development Server
-Start the Express backend and Vite frontend:
-```bash
-# Start backend server (Port 3001)
-npm run server
-
-# Start Vite frontend (Port 5173)
-npm run dev
-```
-
-## 🛠️ Tech Stack
-- **Frontend**: React 19, Vite, Vanilla CSS (Glassmorphism design)
-- **Backend**: Express 5, CORS, Undici (Direct Dispatcher)
-- **API**: Spotify Web API (Client Credentials Flow)
-
-## 📄 License
-MIT License
+If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
