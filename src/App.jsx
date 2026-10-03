@@ -1,3 +1,13 @@
+function extractTrackId(input) {
+  const clean = input.trim();
+  const urlMatch = clean.match(/track\/([a-zA-Z0-9]+)/);
+  if (urlMatch) return urlMatch[1];
+  const uriMatch = clean.match(/spotify:track:([a-zA-Z0-9]+)/);
+  if (uriMatch) return uriMatch[1];
+  if (/^[a-zA-Z0-9]{22}$/.test(clean)) return clean;
+  return null;
+}
+
 import React, { useState } from 'react';
 import './App.css';
 
