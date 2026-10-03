@@ -22,6 +22,7 @@ app.post('/api/token', async (req, res) => {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         Authorization: `Basic ${authString}`,
+        'User-Agent': 'curl/8.4.0',
       },
       body: 'grant_type=client_credentials',
     });
