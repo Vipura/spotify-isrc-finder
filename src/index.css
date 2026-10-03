@@ -1,13 +1,63 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
 :root {
-  --primary: #1DB954;
-  --primary-hover: #1ed760;
-  --bg-color: #0f1015;
-  --text-main: #ffffff;
-  --text-muted: #a0a5b5;
+  --green: #1DB954;
+  --green-hover: #1ed760;
+  --green-glow: rgba(29, 185, 84, 0.25);
+  --bg: #121212;
+  --surface: #1a1a2e;
+  --surface-hover: #222240;
+  --card: #16213e;
+  --border: rgba(255, 255, 255, 0.06);
+  --border-focus: rgba(29, 185, 84, 0.5);
+  --text: #ffffff;
+  --text-secondary: #a0a0b8;
+  --text-muted: rgba(255, 255, 255, 0.35);
+  --error: #e22134;
+  --error-bg: rgba(226, 33, 52, 0.08);
+  --error-border: rgba(226, 33, 52, 0.25);
+  --radius: 12px;
+  --radius-sm: 8px;
+  --transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 * {
-  box-sizing: border-box;
   margin: 0;
   padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow-x: hidden;
+}
+
+/* Ambient background glow */
+body::before {
+  content: '';
+  position: fixed;
+  top: -40%;
+  left: -20%;
+  width: 80%;
+  height: 80%;
+  background: radial-gradient(circle, rgba(29, 185, 84, 0.04) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+#root {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  padding: 2rem 1rem;
+  position: relative;
+  z-index: 1;
 }
