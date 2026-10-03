@@ -1,3 +1,17 @@
+function TrackInfo({ track }) {
+  const albumArt = track.album?.images?.[1]?.url || track.album?.images?.[0]?.url;
+  const artists = track.artists?.map((a) => a.name).join(', ');
+  return (
+    <div className="track-info">
+      {albumArt && <img className="track-art" src={albumArt} alt="Album art" />}
+      <div className="track-details">
+        <div className="track-name">{track.name}</div>
+        <div className="track-artist">{artists}</div>
+      </div>
+    </div>
+  );
+}
+
 function SettingsPanel({ clientId, setClientId, clientSecret, setClientSecret }) {
   const [open, setOpen] = useState(false);
   return (
