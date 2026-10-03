@@ -28,4 +28,18 @@ app.post('/api/token', async (req, res) => {
   }
 });
 
+app.get('/api/track/:id', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Missing Authorization header' });
+  try {
+    const response = await fetch(`https://api.spotify.com/v1/tracks/${req.params.id}`, {
+      headers: { Authorization: authHeader }
+    });
+    const data = await response.json();
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(PORT, () => console.log(`Backend running at http://localhost:${PORT}`));
