@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import './App.css';
 
 // ─── Helpers ──────────────────────────────────────────────────────────
@@ -20,78 +20,17 @@ function extractTrackId(url) {
   return null;
 }
 
-// ─── API calls (routed through Express backend proxy) ─────────────────
+// ─── API call (routed through Express backend) ─────────────────────────
 
-async function getAccessToken(clientId, clientSecret) {
-  const res = await fetch('/api/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ clientId, clientSecret }),
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error_description || data.error || 'Authentication failed. Check your API keys.');
-  }
-  return data.access_token;
-}
-
-async function getTrackData(trackId, token) {
-  const res = await fetch(`https://api.spotify.com/v1/tracks/${trackId}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+async function lookupISRC(trackId) {
+  const res = await fetch(`/api/isrc/${trackId}`);
   const data = await res.json();
   if (res.status === 404) throw new Error('Track not found on Spotify.');
-  if (!res.ok) throw new Error(data.error?.message || 'Failed to fetch track data.');
+  if (!res.ok) throw new Error(data.error?.message || data.error || 'Failed to fetch track data.');
   return data;
 }
 
 // ─── Components ───────────────────────────────────────────────────────
-
-function SettingsPanel({ clientId, setClientId, clientSecret, setClientSecret }) {
-  const [open, setOpen] = useState(!clientId || !clientSecret);
-  const configured = clientId && clientSecret;
-
-  return (
-    <div className="settings-panel">
-      <button className="settings-toggle" onClick={() => setOpen(!open)}>
-        <span>
-          <span className={`settings-dot ${configured ? 'configured' : 'missing'}`} />
-          API Configuration
-        </span>
-        <span className={`toggle-icon ${open ? 'open' : ''}`}>▼</span>
-      </button>
-      <div className={`settings-content ${open ? 'open' : ''}`}>
-        <div className="settings-fields">
-          <div className="form-group">
-            <label className="form-label" htmlFor="clientId">Client ID</label>
-            <input
-              className="form-input"
-              id="clientId"
-              type="text"
-              placeholder="Paste your Spotify Client ID"
-              value={clientId}
-              onChange={(e) => setClientId(e.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label" htmlFor="clientSecret">Client Secret</label>
-            <input
-              className="form-input"
-              id="clientSecret"
-              type="password"
-              placeholder="Paste your Client Secret"
-              value={clientSecret}
-              onChange={(e) => setClientSecret(e.target.value)}
-              autoComplete="off"
-            />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function TrackInfo({ track }) {
   const albumArt = track.album?.images?.[1]?.url || track.album?.images?.[0]?.url;
@@ -158,31 +97,16 @@ function ResultCard({ track, isrc }) {
 // ─── Main App ─────────────────────────────────────────────────────────
 
 export default function App() {
-  const [clientId, setClientId] = useState('');
-  const [clientSecret, setClientSecret] = useState('');
   const [trackUrl, setTrackUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [result, setResult] = useState(null); // { track, isrc }
-
-  // Persist credentials in localStorage
-  useEffect(() => {
-    setClientId(localStorage.getItem('spotifyClientId') || '');
-    setClientSecret(localStorage.getItem('spotifyClientSecret') || '');
-  }, []);
-
-  useEffect(() => { localStorage.setItem('spotifyClientId', clientId); }, [clientId]);
-  useEffect(() => { localStorage.setItem('spotifyClientSecret', clientSecret); }, [clientSecret]);
+  const [result, setResult] = useState(null);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setResult(null);
 
-    if (!clientId.trim() || !clientSecret.trim()) {
-      setError('Please provide both your Client ID and Client Secret in the API Configuration above.');
-      return;
-    }
     if (!trackUrl.trim()) {
       setError('Please enter a Spotify track URL.');
       return;
@@ -196,11 +120,10 @@ export default function App() {
 
     setLoading(true);
     try {
-      const token = await getAccessToken(clientId.trim(), clientSecret.trim());
-      const track = await getTrackData(trackId, token);
+      const track = await lookupISRC(trackId);
       const isrc = track?.external_ids?.isrc;
       if (!isrc) {
-        setError('No ISRC found for this track in Spotify\'s response.');
+        setError("No ISRC found for this track in Spotify's response.");
         return;
       }
       setResult({ track, isrc });
@@ -223,13 +146,6 @@ export default function App() {
 
       <div className="card">
         <form onSubmit={handleSubmit}>
-          <SettingsPanel
-            clientId={clientId}
-            setClientId={setClientId}
-            clientSecret={clientSecret}
-            setClientSecret={setClientSecret}
-          />
-
           <div className="url-section">
             <div className="form-group">
               <label className="form-label" htmlFor="trackUrl">Spotify Track URL</label>
