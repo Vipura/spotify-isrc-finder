@@ -50,6 +50,7 @@ function TrackInfo({ track }) {
 
 function ResultCard({ track, isrc }) {
   const [copied, setCopied] = useState(false);
+  const [instaCopied, setInstaCopied] = useState(false);
 
   const handleCopy = async () => {
     try {
@@ -69,6 +70,25 @@ function ResultCard({ track, isrc }) {
     }
   };
 
+  const handleInstaCopy = async () => {
+    const instaText = `isrc:${isrc}`;
+    try {
+      await navigator.clipboard.writeText(instaText);
+      setInstaCopied(true);
+      setTimeout(() => setInstaCopied(false), 2000);
+    } catch {
+      // fallback
+      const ta = document.createElement('textarea');
+      ta.value = instaText;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      setInstaCopied(true);
+      setTimeout(() => setInstaCopied(false), 2000);
+    }
+  };
+
   return (
     <div className="result-section">
       <div className="result-card">
@@ -76,19 +96,34 @@ function ResultCard({ track, isrc }) {
           <TrackInfo track={track} />
           <div className="result-label">ISRC Code</div>
           <div className="isrc-display">{isrc}</div>
-          <button className={`copy-btn ${copied ? 'copied' : ''}`} onClick={handleCopy}>
-            {copied ? (
-              <>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                Copied!
-              </>
-            ) : (
-              <>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
-                Copy to Clipboard
-              </>
-            )}
-          </button>
+          <div className="button-group">
+            <button className={`copy-btn ${copied ? 'copied' : ''}`} onClick={handleCopy}>
+              {copied ? (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                  Copied!
+                </>
+              ) : (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                  Copy to Clipboard
+                </>
+              )}
+            </button>
+            <button className={`copy-btn ${instaCopied ? 'copied' : ''}`} onClick={handleInstaCopy}>
+              {instaCopied ? (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                  Copied for IG!
+                </>
+              ) : (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line></svg>
+                  Copy for Instagram
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </div>

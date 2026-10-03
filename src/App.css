@@ -371,6 +371,13 @@
   background: rgba(29, 185, 84, 0.12);
 }
 
+.button-group {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 1rem;
+}
+
 /* ─── Track Info ─────────────────────────────────────────────────── */
 .track-info {
   display: flex;
