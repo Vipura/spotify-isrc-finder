@@ -23,7 +23,8 @@ function extractTrackId(url) {
 // ─── API call (routed through Express backend) ─────────────────────────
 
 async function lookupISRC(trackId) {
-  const res = await fetch(`/api/isrc/${trackId}`);
+  const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
+  const res = await fetch(`${baseUrl}/api/isrc/${trackId}`);
   const data = await res.json();
   if (res.status === 404) throw new Error('Track not found on Spotify.');
   if (!res.ok) throw new Error(data.error?.message || data.error || 'Failed to fetch track data.');

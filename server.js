@@ -3,7 +3,7 @@ import cors from 'cors';
 import { Agent, fetch as undiciFetch } from 'undici';
 
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 
 // ─── Load credentials from environment ──────────────────────────────────
 const CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
