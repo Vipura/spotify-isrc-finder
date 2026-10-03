@@ -5,15 +5,18 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "server": "node server.js",
+    "start": "node server.js & vite",
     "build": "vite build",
     "lint": "oxlint",
     "preview": "vite preview"
   },
   "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "cors": "^2.8.6",
-    "express": "^5.2.1"
+    "undici": "^8.11.2"
   },
   "devDependencies": {
     "@types/react": "^19.2.18",
