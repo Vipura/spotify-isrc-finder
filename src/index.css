@@ -1,0 +1,13 @@
+:root {
+  --primary: #1DB954;
+  --primary-hover: #1ed760;
+  --bg-color: #0f1015;
+  --text-main: #ffffff;
+  --text-muted: #a0a5b5;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
