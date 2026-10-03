@@ -1,3 +1,24 @@
+function SettingsPanel({ clientId, setClientId, clientSecret, setClientSecret }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="settings-section">
+      <button type="button" className="settings-toggle" onClick={() => setOpen(!open)}>
+        <span className="settings-toggle-title">Spotify API Credentials</span>
+      </button>
+      <div className={`settings-body ${open ? 'open' : ''}`}>
+        <div className="form-group">
+          <label className="form-label" htmlFor="clientId">Client ID</label>
+          <input className="form-input" id="clientId" type="text" value={clientId} onChange={(e) => setClientId(e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label" htmlFor="clientSecret">Client Secret</label>
+          <input className="form-input" id="clientSecret" type="password" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function extractTrackId(input) {
   const clean = input.trim();
   const urlMatch = clean.match(/track\/([a-zA-Z0-9]+)/);
