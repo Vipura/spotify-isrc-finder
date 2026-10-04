@@ -1,6 +1,6 @@
 .app-container {
   width: 100%;
-  max-width: 480px;
+  max-width: 600px;
 }
 
 /* ─── Header ─────────────────────────────────────────────────────── */
@@ -346,29 +346,49 @@
 .copy-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.5rem;
-  padding: 0.625rem 1.25rem;
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: var(--text-secondary);
+  padding: 0.625rem 1rem;
   border-radius: 500px;
   font-size: 0.85rem;
   font-weight: 600;
   font-family: inherit;
   cursor: pointer;
   transition: all var(--transition);
+  flex: 1;
 }
 
-.copy-btn:hover {
+.copy-btn.primary-copy {
+  background: var(--green);
+  color: white;
+  border: 1px solid var(--green);
+}
+
+.copy-btn.primary-copy:hover {
+  background: var(--green-hover);
+  box-shadow: 0 4px 12px var(--green-glow);
+}
+
+.copy-btn.primary-copy.copied {
+  background: #15a047;
+}
+
+.copy-btn.secondary-copy {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.copy-btn.secondary-copy:hover {
+  border-color: var(--text);
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.copy-btn.secondary-copy.copied {
   border-color: var(--green);
   color: var(--green);
   background: rgba(29, 185, 84, 0.08);
-}
-
-.copy-btn.copied {
-  border-color: var(--green);
-  color: var(--green);
-  background: rgba(29, 185, 84, 0.12);
 }
 
 .button-group {
@@ -376,6 +396,13 @@
   gap: 12px;
   justify-content: center;
   margin-top: 1rem;
+  flex-direction: row;
+}
+
+@media (max-width: 480px) {
+  .button-group {
+    flex-direction: column;
+  }
 }
 
 /* ─── Track Info ─────────────────────────────────────────────────── */
@@ -419,4 +446,152 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* ─── About Section ──────────────────────────────────────────────── */
+.about-section {
+  margin-top: 2rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.about-toggle {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.25rem 1.5rem;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 1.05rem;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background var(--transition);
+}
+
+.about-toggle:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.about-toggle .toggle-icon {
+  color: var(--green);
+  transition: transform var(--transition);
+}
+
+.about-toggle .toggle-icon.open {
+  transform: rotate(180deg);
+}
+
+.about-content {
+  max-height: 0;
+  opacity: 0;
+  padding: 0 1.5rem;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  line-height: 1.6;
+  transition: all 0.4s ease;
+  overflow: hidden;
+}
+
+.about-content.open {
+  max-height: 500px;
+  opacity: 1;
+  padding: 0 1.5rem 1.5rem;
+}
+
+/* ─── How It Works ───────────────────────────────────────────────── */
+.how-it-works {
+  margin-top: 2.5rem;
+}
+
+.section-title {
+  text-align: center;
+  font-size: 1.35rem;
+  font-weight: 800;
+  margin-bottom: 1.5rem;
+  color: var(--text);
+}
+
+.steps-container {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+}
+
+@media (min-width: 520px) {
+  .steps-container {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.step-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  position: relative;
+  transition: transform var(--transition), box-shadow var(--transition);
+  display: flex;
+  flex-direction: column;
+}
+
+.step-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  border-color: rgba(29, 185, 84, 0.3);
+}
+
+.step-number {
+  position: absolute;
+  top: -12px;
+  left: 1.5rem;
+  width: 28px;
+  height: 28px;
+  background: var(--green);
+  color: var(--bg);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  font-size: 0.9rem;
+  box-shadow: 0 4px 12px var(--green-glow);
+}
+
+.step-content {
+  margin-top: 0.5rem;
+}
+
+.step-content h3 {
+  font-size: 1.05rem;
+  color: var(--text);
+  margin-bottom: 0.5rem;
+  font-weight: 700;
+}
+
+.step-content p {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.step-content ul {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  padding-left: 1.2rem;
+  margin: 0;
+}
+
+.step-content ul li {
+  margin-bottom: 0.25rem;
+}
+
+.step-content ul li strong {
+  color: var(--text);
 }
