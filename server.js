@@ -23,6 +23,11 @@ const directFetch = (url, opts = {}) =>
 app.use(cors());
 app.use(express.json());
 
+// Health check route for UptimeRobot
+app.get('/', (req, res) => {
+    res.status(200).send('Backend is awake and running!');
+});
+
 // ─── Internal: get Spotify access token (server-side only) ──────────────
 async function getSpotifyToken() {
   const authString = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64');
