@@ -1,19 +1,350 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import './App.css';
 
+// ─── useDebounce Hook ─────────────────────────────────────────────────
+function useDebounce(value, delay) {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+  useEffect(() => {
+    const handler = setTimeout(() => setDebouncedValue(value), delay);
+    return () => clearTimeout(handler);
+  }, [value, delay]);
+  return debouncedValue;
+}
+
+// ─── localStorage helpers ─────────────────────────────────────────────
+const LS_KEY = 'isrc_saved_tracks';
+function getSaved() {
+  try { return JSON.parse(localStorage.getItem(LS_KEY)) || []; }
+  catch { return []; }
+}
+function setSaved(tracks) {
+  localStorage.setItem(LS_KEY, JSON.stringify(tracks));
+}
+
+// ─── URL / Track ID helpers ───────────────────────────────────────────
+function extractTrackId(input) {
+  try {
+    const parsed = new URL(input.trim());
+    if (parsed.hostname === 'open.spotify.com') {
+      const segs = parsed.pathname.split('/').filter(Boolean);
+      if (segs.length >= 2 && segs[0] === 'track') return segs[1];
+    }
+  } catch { /* not a URL */ }
+  const match = input.match(/track[/:]([a-zA-Z0-9]+)/);
+  if (match?.[1]) return match[1];
+  return null;
+}
+
+function isSpotifyUrl(input) {
+  return /open\.spotify\.com\/track/.test(input) || /spotify:track:/.test(input);
+}
+
+// ─── API wrappers ─────────────────────────────────────────────────────
+const BASE = import.meta.env.VITE_API_BASE_URL || '';
+
+async function apiSearch(q) {
+  const res = await fetch(`${BASE}/api/search?q=${encodeURIComponent(q)}`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error?.message || (typeof data.error === 'object' ? JSON.stringify(data.error) : data.error) || 'Search failed');
+  return data; // returns { tracks, artists }
+}
+
+async function apiISRC(trackId) {
+  const res = await fetch(`${BASE}/api/isrc/${trackId}`);
+  const data = await res.json();
+  if (res.status === 404) throw new Error('Track not found on Spotify.');
+  if (!res.ok) throw new Error(data.error?.message || data.error || 'Failed to fetch track.');
+  return data;
+}
+
+async function apiFeatured() {
+  const res = await fetch(`${BASE}/api/featured`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error?.message || (typeof data.error === 'object' ? JSON.stringify(data.error) : data.error) || 'Failed to load featured tracks');
+  return data.tracks;
+}
+
+async function apiArtistTopTracks(id) {
+  const res = await fetch(`${BASE}/api/artists/${id}/top-tracks`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error?.message || (typeof data.error === 'object' ? JSON.stringify(data.error) : data.error) || 'Failed to load artist tracks');
+  return data.tracks;
+}
+
+// ─── Spotify Embed Player (bottom bar) ──────────────────────────────────
+// Uses Spotify's official embed which plays 30s previews for free, no login needed
+function MiniPlayer({ track, onClose }) {
+  const audioRef = useRef(null);
+  const [playing, setPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [loadingAudio, setLoadingAudio] = useState(true);
+
+  useEffect(() => {
+    const a = audioRef.current;
+    if (!a) return;
+
+    let isCancelled = false;
+
+    const loadAudio = async () => {
+      setLoadingAudio(true);
+      let urlToPlay = track.previewUrl;
+
+      // If Spotify didn't provide a preview URL, dynamically fetch one from iTunes!
+      if (!urlToPlay) {
+        try {
+          const query = encodeURIComponent(`${track.name} ${track.artists.split(',')[0]}`);
+          const res = await fetch(`https://itunes.apple.com/search?term=${query}&entity=song&limit=1`);
+          const data = await res.json();
+          if (data.results && data.results.length > 0 && data.results[0].previewUrl) {
+            urlToPlay = data.results[0].previewUrl;
+          }
+        } catch (err) {
+          console.error("iTunes fetch error:", err);
+        }
+      }
+
+      if (isCancelled) return;
+
+      if (urlToPlay) {
+        a.src = urlToPlay;
+        a.play().then(() => {
+          if (!isCancelled) {
+            setPlaying(true);
+            setLoadingAudio(false);
+          }
+        }).catch(err => {
+          console.error("Play error:", err);
+          if (!isCancelled) setLoadingAudio(false);
+        });
+      } else {
+        setLoadingAudio(false);
+      }
+    };
+
+    loadAudio();
+    
+    return () => {
+      isCancelled = true;
+      a.pause();
+    };
+  }, [track.id, track.previewUrl, track.name, track.artists]);
+
+  useEffect(() => {
+    const a = audioRef.current;
+    if (!a) return;
+    const onTime = () => setProgress(a.currentTime);
+    const onDur  = () => setDuration(a.duration);
+    const onEnd  = () => setPlaying(false);
+    a.addEventListener('timeupdate', onTime);
+    a.addEventListener('durationchange', onDur);
+    a.addEventListener('ended', onEnd);
+    return () => {
+      a.removeEventListener('timeupdate', onTime);
+      a.removeEventListener('durationchange', onDur);
+      a.removeEventListener('ended', onEnd);
+    };
+  }, []);
+
+  const togglePlay = () => {
+    const a = audioRef.current;
+    if (!a || !a.src) return;
+    if (playing) { a.pause(); setPlaying(false); }
+    else { a.play(); setPlaying(true); }
+  };
+
+  const seek = (e) => {
+    const a = audioRef.current;
+    if (!a || !duration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ratio = (e.clientX - rect.left) / rect.width;
+    a.currentTime = ratio * duration;
+  };
+
+  const pct = duration ? (progress / duration) * 100 : 0;
+
+  return (
+    <div className="mini-player">
+      <audio ref={audioRef} />
+      <img className="mp-art" src={track.albumArt} alt={track.album} />
+      <div className="mp-info">
+        <div className="mp-name">{track.name}</div>
+        <div className="mp-artist">{track.artists}</div>
+        <div className="mp-badge">{loadingAudio ? 'Loading...' : 'Preview · 30s'}</div>
+      </div>
+      <div className="mp-controls">
+        <button className="mp-play-btn" onClick={togglePlay} aria-label={playing ? 'Pause' : 'Play'} disabled={loadingAudio}>
+          {playing ? (
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/>
+            </svg>
+          ) : (
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="5,3 19,12 5,21"/>
+            </svg>
+          )}
+        </button>
+        <div className="mp-progress-wrap" onClick={seek}>
+          <div className="mp-progress-bar">
+            <div className="mp-progress-fill" style={{ width: `${pct}%` }} />
+          </div>
+          <div className="mp-times">
+            <span>{Math.floor(progress)}s</span>
+            <span>{duration ? `${Math.floor(duration)}s` : '30s'}</span>
+          </div>
+        </div>
+      </div>
+      <button className="mp-close" onClick={onClose} aria-label="Close player">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+  );
+}
+
+// ─── Copy helper ──────────────────────────────────────────────────────
+const copyToClipboard = async (text, setCopied) => {
+  try { await navigator.clipboard.writeText(text); }
+  catch { const t = document.createElement('textarea'); t.value = text; document.body.appendChild(t); t.select(); document.execCommand('copy'); document.body.removeChild(t); }
+  setCopied(true);
+  setTimeout(() => setCopied(false), 2000);
+};
+
+// ─── Track Grid Card (Vertical - for Popular on Spotify) ──────────────
+function TrackGridCard({ track, onPlay, onSave, isSaved }) {
+  const [copied, setCopied] = useState(false);
+  const [igCopied, setIgCopied] = useState(false);
+  const [noPreviewMsg, setNoPreviewMsg] = useState(false);
+
+  const handlePlay = () => {
+    onPlay(track); // Spotify embed always works - no preview URL needed
+  };
+
+  return (
+    <div className="track-grid-card glass-card">
+      <div className="tc-art-wrap" onClick={handlePlay}>
+        {track.albumArt
+          ? <img className="tc-art" src={track.albumArt} alt={track.album} />
+          : <div className="tc-art-placeholder"><svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" opacity=".3"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/></svg></div>
+        }
+        <div className="tc-play-overlay">
+            <div className="tc-play-circle">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21"/></svg>
+            </div>
+          </div>
+      </div>
+
+      <div className="tc-body">
+        <div className="tc-header-row">
+          <div className="tc-text-info">
+            <div className="tc-name" title={track.name}>{track.name}</div>
+            <div className="tc-artist" title={track.artists}>{track.artists}</div>
+          </div>
+          <button className={`tc-save-icon ${isSaved ? 'saved' : ''}`} onClick={() => onSave(track)} title={isSaved ? 'Remove from saved' : 'Save track'}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill={isSaved ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+            </svg>
+          </button>
+        </div>
+
+        {track.isrc && (
+          <div className="tc-actions">
+            <div className={`tc-isrc-badge ${copied ? 'copied' : ''}`} onClick={() => copyToClipboard(track.isrc, setCopied)} title="Copy ISRC">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                {copied ? <polyline points="20 6 9 17 4 12"/> : <><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></>}
+              </svg>
+              <span>{track.isrc}</span>
+            </div>
+            
+            <button className={`tc-ig-btn ${igCopied ? 'copied' : ''}`} onClick={() => copyToClipboard(`isrc:${track.isrc}`, setIgCopied)} title="Copy ISRC for Instagram">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>
+              <span>{igCopied ? '\u2713' : 'for IG'}</span>
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Track List Card (Horizontal - for Search Results) ─────────────────
+function TrackListCard({ track, onPlay, onSave, isSaved }) {
+  const [copied, setCopied] = useState(false);
+  const [igCopied, setIgCopied] = useState(false);
+
+  return (
+    <div className="track-list-card glass-list-card">
+      <div className="tl-art-wrap" onClick={() => onPlay(track)}>
+        {track.albumArt
+          ? <img className="tl-art" src={track.albumArt} alt={track.album} />
+          : <div className="tl-art-placeholder"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" opacity=".3"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/></svg></div>
+        }
+        <div className="tl-play-overlay">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21"/></svg>
+        </div>
+      </div>
+
+      <div className="tl-info">
+        <div className="tl-name" title={track.name}>{track.name}</div>
+        <div className="tl-artist" title={track.artists}>{track.artists}</div>
+      </div>
+
+      <div className="tl-actions">
+        {track.isrc && (
+          <>
+            <div className={`tl-isrc-badge ${copied ? 'copied' : ''}`} onClick={() => copyToClipboard(track.isrc, setCopied)} title="Copy ISRC">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                {copied ? <polyline points="20 6 9 17 4 12"/> : <><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></>}
+              </svg>
+              <span>{track.isrc}</span>
+            </div>
+            
+            <button className={`tl-btn tl-ig ${igCopied ? 'copied' : ''}`} onClick={() => copyToClipboard(`isrc:${track.isrc}`, setIgCopied)} title="Copy ISRC for Instagram">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>
+              <span className="tl-ig-label">{igCopied ? '\u2713' : 'for IG'}</span>
+            </button>
+          </>
+        )}
+        <button className={`tl-btn tl-save ${isSaved ? 'saved' : ''}`} onClick={() => onSave(track)} title={isSaved ? 'Remove from saved' : 'Save track'}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill={isSaved ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Artist Bubble ────────────────────────────────────────────────────
+function ArtistBubble({ artist, onClick }) {
+  return (
+    <div className="artist-bubble" onClick={() => onClick(artist)}>
+      {artist.imageUrl ? (
+        <img src={artist.imageUrl} alt={artist.name} className="artist-img" />
+      ) : (
+        <div className="artist-img-placeholder"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+      )}
+      <div className="artist-info">
+        <div className="artist-name">{artist.name}</div>
+        <div className="artist-label">Artist</div>
+      </div>
+    </div>
+  );
+}
+
+
+// ─── About & How It Works ─────────────────────────────────────────────
 function AboutSection() {
   const [isOpen, setIsOpen] = useState(false);
-
   return (
     <div className="about-section">
       <button className="about-toggle" onClick={() => setIsOpen(!isOpen)} aria-expanded={isOpen}>
         <span>What is Spotify ISRC Finder?</span>
-        <svg className={`toggle-icon ${isOpen ? 'open' : ''}`} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        <svg className={`toggle-icon ${isOpen ? 'open' : ''}`} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
       </button>
       <div className={`about-content ${isOpen ? 'open' : ''}`}>
-        <p>
-          Spotify ISRC Finder converts any Spotify track link into its unique International Standard Recording Code (ISRC). An ISRC is a song's digital fingerprint, allowing you to identify exact tracks across music platforms and social media without getting wrong remixes, covers, or duplicate releases.
-        </p>
+        <p>Spotify ISRC Finder converts any Spotify track link into its unique International Standard Recording Code (ISRC). An ISRC is a song's digital fingerprint, allowing you to identify exact tracks across music platforms and social media without getting wrong remixes, covers, or duplicate releases.</p>
       </div>
     </div>
   );
@@ -24,258 +355,209 @@ function HowItWorks() {
     <div className="how-it-works">
       <h2 className="section-title">How It Works</h2>
       <div className="steps-container">
-        <div className="step-card">
-          <div className="step-number">1</div>
-          <div className="step-content">
-            <h3>Copy Link</h3>
-            <p>Open Spotify, click Share on any track, and select "Copy Song Link".</p>
+        {[
+          { n: 1, h: 'Search Anything', p: 'Type a song name, artist name, or paste a Spotify track URL in the search bar.' },
+          { n: 2, h: 'Preview & Pick', p: 'Browse results, play 30-second previews, and select the exact track you need.' },
+          { n: 3, h: 'Copy ISRC', p: 'Click "Copy ISRC" for the raw code, or "For IG" to get isrc:CODE format for Instagram.' },
+          { n: 4, h: 'Save Favourites', p: 'Hit the heart icon to save tracks to your browser — they persist across sessions.' },
+        ].map(({ n, h, p }) => (
+          <div key={n} className="step-card">
+            <div className="step-number">{n}</div>
+            <div className="step-content">
+              <h3>{h}</h3>
+              <p>{p}</p>
+            </div>
           </div>
-        </div>
-        <div className="step-card">
-          <div className="step-number">2</div>
-          <div className="step-content">
-            <h3>Find Code</h3>
-            <p>Paste the URL in the search bar and click "Find ISRC".</p>
-          </div>
-        </div>
-        <div className="step-card">
-          <div className="step-number">3</div>
-          <div className="step-content">
-            <h3>Choose Your Copy Option</h3>
-            <ul>
-              <li><strong>"Copy ISRC"</strong>: Copies the raw ISRC code (e.g., USUM71702893) to your clipboard for general use.</li>
-              <li><strong>"Copy for Instagram"</strong>: Copies the code pre-formatted with the search operator (e.g., isrc:USUM71702893).</li>
-            </ul>
-          </div>
-        </div>
-        <div className="step-card">
-          <div className="step-number">4</div>
-          <div className="step-content">
-            <h3>Paste & Add to Content</h3>
-            <p>Go to Instagram (Posts, Stories, or Notes), open the Music search bar, and paste. Instagram will instantly pinpoint the exact song!</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────
-
-function extractTrackId(url) {
-  try {
-    const parsed = new URL(url);
-    if (parsed.hostname === 'open.spotify.com') {
-      const segments = parsed.pathname.split('/').filter(Boolean);
-      if (segments.length >= 2 && segments[0] === 'track') {
-        return segments[1];
-      }
-    }
-  } catch {
-    // fallback: spotify:track:ID or partial track/ID
-    const match = url.match(/track[/:]([a-zA-Z0-9]+)/);
-    if (match?.[1]) return match[1];
-  }
-  return null;
-}
-
-// ─── API call (routed through Express backend) ─────────────────────────
-
-async function lookupISRC(trackId) {
-  const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
-  const res = await fetch(`${baseUrl}/api/isrc/${trackId}`);
-  const data = await res.json();
-  if (res.status === 404) throw new Error('Track not found on Spotify.');
-  if (!res.ok) throw new Error(data.error?.message || data.error || 'Failed to fetch track data.');
-  return data;
-}
-
-// ─── Components ───────────────────────────────────────────────────────
-
-function TrackInfo({ track }) {
-  const albumArt = track.album?.images?.[1]?.url || track.album?.images?.[0]?.url;
-  const artists = track.artists?.map((a) => a.name).join(', ');
-
-  return (
-    <div className="track-info">
-      {albumArt && <img className="track-art" src={albumArt} alt="Album art" />}
-      <div className="track-details">
-        <div className="track-name">{track.name}</div>
-        <div className="track-artist">{artists}</div>
-      </div>
-    </div>
-  );
-}
-
-function ResultCard({ track, isrc }) {
-  const [copied, setCopied] = useState(false);
-  const [instaCopied, setInstaCopied] = useState(false);
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(isrc);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // fallback
-      const ta = document.createElement('textarea');
-      ta.value = isrc;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
-
-  const handleInstaCopy = async () => {
-    const instaText = `isrc:${isrc}`;
-    try {
-      await navigator.clipboard.writeText(instaText);
-      setInstaCopied(true);
-      setTimeout(() => setInstaCopied(false), 2000);
-    } catch {
-      // fallback
-      const ta = document.createElement('textarea');
-      ta.value = instaText;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
-      setInstaCopied(true);
-      setTimeout(() => setInstaCopied(false), 2000);
-    }
-  };
-
-  return (
-    <div className="result-section">
-      <div className="result-card">
-        <div className="result-card-inner">
-          <TrackInfo track={track} />
-          <div className="result-label">ISRC Code</div>
-          <div className="isrc-display">{isrc}</div>
-          <div className="button-group">
-            <button className={`copy-btn primary-copy ${copied ? 'copied' : ''}`} onClick={handleCopy}>
-              {copied ? (
-                <>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                  Copied!
-                </>
-              ) : (
-                <>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
-                  Copy ISRC
-                </>
-              )}
-            </button>
-            <button className={`copy-btn secondary-copy ${instaCopied ? 'copied' : ''}`} onClick={handleInstaCopy}>
-              {instaCopied ? (
-                <>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                  Copied for IG!
-                </>
-              ) : (
-                <>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line></svg>
-                  Copy for Instagram
-                </>
-              )}
-            </button>
-          </div>
-        </div>
+        ))}
       </div>
     </div>
   );
 }
 
 // ─── Main App ─────────────────────────────────────────────────────────
-
 export default function App() {
-  const [trackUrl, setTrackUrl] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [result, setResult] = useState(null);
+  const [query, setQuery]           = useState('');
+  const debouncedQuery              = useDebounce(query, 500); // Live search delay
+  
+  const [loading, setLoading]       = useState(false);
+  const [error, setError]           = useState('');
+  
+  const [searchResults, setSearchResults] = useState(null); // null means not searched
+  const [searchArtists, setSearchArtists] = useState([]);
+  
+  const [artistTopTracks, setArtistTopTracks] = useState(null); // { artistName, tracks }
+  
+  const [featured, setFeatured]     = useState([]);
+  const [featLoading, setFeatLoading] = useState(true);
+  
+  const [nowPlaying, setNowPlaying] = useState(null);
+  const [saved, setSavedState]      = useState(getSaved);
+  const [activeTab, setActiveTab]   = useState('home');     // 'home' | 'saved'
+  const searchRef = useRef(null);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  // Load featured on mount
+  useEffect(() => {
+    setFeatLoading(true);
+    apiFeatured()
+      .then(setFeatured)
+      .catch(err => console.error('Featured error:', err))
+      .finally(() => setFeatLoading(false));
+  }, []);
+
+  // Save to localStorage whenever saved list changes
+  useEffect(() => { setSaved(saved); }, [saved]);
+
+  const isSaved = useCallback((id) => saved.some(t => t.id === id), [saved]);
+
+  const toggleSave = useCallback((track) => {
+    setSavedState(prev => {
+      const exists = prev.some(t => t.id === track.id);
+      const next = exists ? prev.filter(t => t.id !== track.id) : [track, ...prev];
+      setSaved(next);
+      return next;
+    });
+  }, []);
+
+  // Live Search Effect
+  useEffect(() => {
+    if (!debouncedQuery.trim()) {
+      setSearchResults(null);
+      setSearchArtists([]);
+      setError('');
+      setArtistTopTracks(null); // Fix: Ensure Popular section comes back
+      return;
+    }
+    
+    // Don't auto-search if viewing artist top tracks (unless they modify the query)
+    setArtistTopTracks(null);
+    performSearch(debouncedQuery);
+  }, [debouncedQuery]);
+
+  const performSearch = async (searchStr) => {
     setError('');
-    setResult(null);
-
-    if (!trackUrl.trim()) {
-      setError('Please enter a Spotify track URL.');
-      return;
-    }
-
-    const trackId = extractTrackId(trackUrl.trim());
-    if (!trackId) {
-      setError('Invalid URL — could not extract a track ID. Make sure the URL looks like https://open.spotify.com/track/...');
-      return;
-    }
-
     setLoading(true);
+    setActiveTab('home');
+
     try {
-      const track = await lookupISRC(trackId);
-      const isrc = track?.external_ids?.isrc;
-      if (!isrc) {
-        setError("No ISRC found for this track in Spotify's response.");
-        return;
+      if (isSpotifyUrl(searchStr)) {
+        const trackId = extractTrackId(searchStr);
+        if (!trackId) throw new Error('Could not extract track ID from the Spotify URL.');
+        const data = await apiISRC(trackId);
+        const track = {
+          id: data.id,
+          name: data.name,
+          artists: data.artists?.map(a => a.name).join(', '),
+          album: data.album?.name,
+          albumArt: data.album?.images?.[1]?.url || data.album?.images?.[0]?.url || null,
+          previewUrl: data.preview_url,
+          isrc: data.external_ids?.isrc || null,
+          duration: data.duration_ms,
+          spotifyUrl: data.external_urls?.spotify,
+        };
+        setSearchResults([track]);
+        setSearchArtists([]);
+      } else {
+        const { tracks, artists } = await apiSearch(searchStr);
+        setSearchResults(tracks);
+        setSearchArtists(artists || []);
+        if (tracks.length === 0 && artists.length === 0) setError('No results found. Try a different search term.');
       }
-      setResult({ track, isrc });
     } catch (err) {
       setError(err.message || 'An unexpected error occurred.');
+      setSearchResults([]);
     } finally {
       setLoading(false);
     }
   };
 
+  const handleArtistClick = async (artist) => {
+    setError('');
+    setLoading(true);
+    setSearchArtists([]); // hide suggestions
+    try {
+      const tracks = await apiArtistTopTracks(artist.id);
+      setArtistTopTracks({ artistName: artist.name, tracks });
+    } catch (err) {
+      setError(err.message || 'Failed to load artist top tracks.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const clearSearch = () => {
+    setQuery(''); // triggers useEffect to clear everything
+  };
+
+  // Determine what to show
+  let contentLayout = 'featured'; // 'featured' (grid) | 'results' (list) | 'saved' (list)
+  let displayTracks = [];
+  let headingText = '';
+
+  if (activeTab === 'saved') {
+    contentLayout = 'saved';
+    displayTracks = saved;
+    headingText = `Saved (${saved.length})`;
+  } else if (artistTopTracks) {
+    contentLayout = 'results';
+    displayTracks = artistTopTracks.tracks;
+    headingText = `Top songs by ${artistTopTracks.artistName}`;
+  } else if (searchResults !== null) {
+    contentLayout = 'results';
+    displayTracks = searchResults;
+    headingText = `Results (${searchResults.length} found)`;
+  } else {
+    contentLayout = 'featured';
+    displayTracks = featured;
+    headingText = 'Popular on Spotify';
+  }
+
   return (
-    <div className="app-container">
-      <header className="app-header">
-        <div className="app-logo">
-          <svg viewBox="0 0 24 24"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z" /></svg>
-        </div>
-        <h1 className="app-title">ISRC Finder</h1>
-        <p className="app-subtitle">Extract ISRC codes from Spotify tracks</p>
-      </header>
+    <>
+      {/* Ambient aurora background */}
+      <div className="aurora-canvas" aria-hidden="true">
+        <div className="aurora-blob aurora-blob-1" />
+        <div className="aurora-blob aurora-blob-2" />
+        <div className="aurora-blob aurora-blob-3" />
+        <div className="aurora-ribbon aurora-ribbon-1" />
+        <div className="aurora-ribbon aurora-ribbon-2" />
+      </div>
 
-      <div className="card">
-        <form onSubmit={handleSubmit}>
-          <div className="url-section">
-            <div className="form-group">
-              <label className="form-label" htmlFor="trackUrl">Spotify Track URL</label>
-              <div className="url-input-wrapper">
-                <input
-                  className="form-input"
-                  id="trackUrl"
-                  type="text"
-                  placeholder="https://open.spotify.com/track/..."
-                  value={trackUrl}
-                  onChange={(e) => setTrackUrl(e.target.value)}
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-                {trackUrl ? (
-                  <button type="button" className="clear-btn" onClick={() => setTrackUrl('')} aria-label="Clear URL">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                  </button>
-                ) : (
-                  <span className="url-icon">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
-                  </span>
-                )}
-              </div>
-            </div>
+      <div className={`app-container ${nowPlaying ? 'has-player' : ''}`}>
+        {/* Header */}
+        <header className="app-header">
+          <div className="app-logo-wrap">
+            <img src="/logo.jpg" alt="ISRC Finder Logo" className="app-logo-img" />
           </div>
+          <h1 className="app-title">ISRC Finder for IG</h1>
+          <p className="app-subtitle">Search by song, artist, or Spotify link — preview, copy &amp; save</p>
+        </header>
 
-          <button className="btn-primary" type="submit" disabled={loading}>
-            <span className="btn-content">
-              {loading && <span className="spinner" />}
-              {loading ? 'Fetching...' : 'Find ISRC'}
-            </span>
+        {/* Search bar */}
+        <div className="search-form" onSubmit={e => e.preventDefault()}>
+          <div className="search-input-wrap">
+            <input
+              ref={searchRef}
+              className="search-input"
+              type="text"
+              placeholder="Search song, artist, or paste Spotify link..."
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+              id="searchInput"
+            />
+            {query && (
+              <button type="button" className="search-clear" onClick={clearSearch} aria-label="Clear">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            )}
+          </div>
+          <button className="search-btn" disabled>
+            {loading ? <span className="spinner" /> : <><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Search</>}
           </button>
-        </form>
+        </div>
 
+        {/* Error banner */}
         {error && (
           <div className="error-banner">
             <span className="error-icon">⚠</span>
@@ -283,11 +565,87 @@ export default function App() {
           </div>
         )}
 
-        {result && <ResultCard track={result.track} isrc={result.isrc} />}
+        {/* Tabs */}
+        <div className="tabs">
+          <button className={`tab-btn ${activeTab === 'home' ? 'active' : ''}`} onClick={() => setActiveTab('home')}>
+            Popular on Spotify
+          </button>
+          <button className={`tab-btn ${activeTab === 'saved' ? 'active' : ''}`} onClick={() => setActiveTab('saved')}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill={saved.length ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: '5px', verticalAlign: 'middle'}}>
+              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+            </svg>
+            Saved ({saved.length})
+          </button>
+        </div>
+
+        {/* Dynamic Content Section */}
+        <div className="content-section">
+          
+          {/* Artist Suggestions (Only show when searching and artists found) */}
+          {activeTab === 'home' && searchArtists.length > 0 && !artistTopTracks && (
+            <div className="suggestions-section">
+              <div className="section-header">
+                <h3>Suggestions</h3>
+                <span className="section-hint">Tap an artist to see top songs</span>
+              </div>
+              <div className="artist-bubbles-row">
+                {searchArtists.map(artist => (
+                  <ArtistBubble key={artist.id} artist={artist} onClick={handleArtistClick} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Tracks Heading */}
+          {(displayTracks.length > 0 || (contentLayout === 'featured' && featLoading)) && (
+            <div className="section-header mt-4">
+              <h3 className="capitalize-first">{headingText}</h3>
+            </div>
+          )}
+
+          {/* Empty State */}
+          {activeTab === 'saved' && saved.length === 0 && (
+            <div className="empty-state">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity=".25">
+                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+              </svg>
+              <p>No saved tracks yet.</p>
+              <p style={{fontSize:'0.8rem'}}>Hit the bookmark icon on any track to save it here.</p>
+            </div>
+          )}
+
+          {/* Loading Skeletons for Featured */}
+          {contentLayout === 'featured' && featLoading && (
+            <div className="tracks-grid">
+              {Array.from({length: 8}).map((_, i) => <div key={i} className="skeleton-card" />)}
+            </div>
+          )}
+
+          {/* Tracks Display */}
+          {displayTracks.length > 0 && (
+            <div className={contentLayout === 'featured' ? 'tracks-grid' : 'tracks-list'}>
+              {displayTracks.map(track => {
+                if (contentLayout === 'featured') {
+                  return <TrackGridCard key={track.id} track={track} onPlay={setNowPlaying} onSave={toggleSave} isSaved={isSaved(track.id)} />;
+                } else {
+                  return <TrackListCard key={track.id} track={track} onPlay={setNowPlaying} onSave={toggleSave} isSaved={isSaved(track.id)} />;
+                }
+              })}
+            </div>
+          )}
+        </div>
+
+        <AboutSection />
+        <HowItWorks />
       </div>
 
-      <AboutSection />
-      <HowItWorks />
-    </div>
+      {/* Mini Player */}
+      {nowPlaying && (
+        <MiniPlayer
+          track={nowPlaying}
+          onClose={() => setNowPlaying(null)}
+        />
+      )}
+    </>
   );
 }
