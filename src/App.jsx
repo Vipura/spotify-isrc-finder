@@ -40,35 +40,76 @@ function isSpotifyUrl(input) {
 }
 
 // ─── API wrappers ─────────────────────────────────────────────────────
-const BASE = import.meta.env.VITE_API_BASE_URL || '';
+// Defaults to proxy (/api) if on same origin or localhost, with explicit fallback
+const BASE = import.meta.env.VITE_API_BASE_URL !== undefined 
+  ? import.meta.env.VITE_API_BASE_URL 
+  : '';
 
-async function apiSearch(q) {
-  const res = await fetch(`${BASE}/api/search?q=${encodeURIComponent(q)}`);
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message || (typeof data.error === 'object' ? JSON.stringify(data.error) : data.error) || 'Search failed');
-  return data; // returns { tracks, artists }
-}
+async function safeFetchJson(url) {
+  let res;
+  try {
+    res = await fetch(url);
+  } catch (err) {
+    // If relative fetch failed or localhost:5173 proxy failed, try direct backend on port 3001
+    if (url.startsWith('/api')) {
+      try {
+        res = await fetch(`http://localhost:3001${url}`);
+      } catch (retryErr) {
+        throw new Error('Unable to connect to backend server. Make sure server is running on port 3001.');
+      }
+    } else {
+      throw err;
+    }
+  }
 
-async function apiISRC(trackId) {
-  const res = await fetch(`${BASE}/api/isrc/${trackId}`);
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    // If Vite proxy returned index.html or 404/504 HTML page, try direct backend fallback
+    if (url.startsWith('/api')) {
+      try {
+        const directRes = await fetch(`http://localhost:3001${url}`);
+        const directType = directRes.headers.get('content-type') || '';
+        if (directType.includes('application/json')) {
+          const directData = await directRes.json();
+          if (!directRes.ok) throw new Error(directData.error?.message || directData.error || `Error ${directRes.status}`);
+          return directData;
+        }
+      } catch (e) {
+        // continue to throw original error
+      }
+    }
+    const text = await res.text();
+    throw new Error(`Server returned non-JSON response (${res.status}). Ensure backend is active.`);
+  }
+
   const data = await res.json();
-  if (res.status === 404) throw new Error('Track not found on Spotify.');
-  if (!res.ok) throw new Error(data.error?.message || data.error || 'Failed to fetch track.');
+  if (!res.ok) {
+    throw new Error(data.error?.message || (typeof data.error === 'object' ? JSON.stringify(data.error) : data.error) || `Error ${res.status}`);
+  }
   return data;
 }
 
+async function apiSearch(q) {
+  return await safeFetchJson(`${BASE}/api/search?q=${encodeURIComponent(q)}`);
+}
+
+async function apiISRC(trackId) {
+  try {
+    return await safeFetchJson(`${BASE}/api/isrc/${trackId}`);
+  } catch (err) {
+    if (err.message.includes('404')) throw new Error('Track not found on Spotify.');
+    throw err;
+  }
+}
+
 async function apiFeatured() {
-  const res = await fetch(`${BASE}/api/featured`);
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message || (typeof data.error === 'object' ? JSON.stringify(data.error) : data.error) || 'Failed to load featured tracks');
-  return data.tracks;
+  const data = await safeFetchJson(`${BASE}/api/featured`);
+  return data.tracks || [];
 }
 
 async function apiArtistTopTracks(id) {
-  const res = await fetch(`${BASE}/api/artists/${id}/top-tracks`);
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message || (typeof data.error === 'object' ? JSON.stringify(data.error) : data.error) || 'Failed to load artist tracks');
-  return data.tracks;
+  const data = await safeFetchJson(`${BASE}/api/artists/${id}/top-tracks`);
+  return data.tracks || [];
 }
 
 // ─── Spotify Embed Player (bottom bar) ──────────────────────────────────
