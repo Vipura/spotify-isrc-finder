@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "server": "node --env-file=.env server.js",
+    "server": "node server.js",
     "start": "node server.js & vite",
     "build": "vite build",
     "lint": "oxlint",

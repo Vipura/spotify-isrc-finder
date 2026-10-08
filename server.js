@@ -1,6 +1,16 @@
 import express from 'express';
 import cors from 'cors';
 import { Agent, fetch as undiciFetch } from 'undici';
+import fs from 'fs';
+
+// Safely load local .env if present (Render supplies env vars via its dashboard)
+if (fs.existsSync('.env') && typeof process.loadEnvFile === 'function') {
+  try {
+    process.loadEnvFile('.env');
+  } catch (e) {
+    // ignore
+  }
+}
 
 const app = express();
 const PORT = process.env.PORT || 3001;
