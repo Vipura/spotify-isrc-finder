@@ -1397,3 +1397,40 @@
 .section-refresh:disabled { opacity: 0.6; cursor: default; }
 .section-refresh .spin { animation: refreshSpin 0.8s linear infinite; }
 @keyframes refreshSpin { to { transform: rotate(360deg); } }
+
+/* --- Mobile / touch performance overrides (appended) ------------------ */
+@media (max-width: 768px), (pointer: coarse) {
+  /* Backdrop blur over an animated background is the #1 cause of Android jank.
+     Cards get a slightly more opaque flat background instead. */
+  *, *::before, *::after {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+  .glass-card, .glass-list-card, .track-grid-card, .track-list-card {
+    background: rgba(24, 28, 38, 0.82) !important;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3) !important;
+  }
+
+  /* Lighter aurora: fewer layers, no blend mode, slower GPU-only motion */
+  .aurora-blob { mix-blend-mode: normal; }
+  .aurora-blob-4, .aurora-blob-5 { display: none; }
+
+  /* Stop continuously repainting the animated box-shadow on the logo */
+  .app-logo-wrap, .app-logo-img { animation: none !important; }
+
+  /* Skip rendering work for off-screen cards */
+  .track-grid-card, .track-list-card {
+    content-visibility: auto;
+    contain-intrinsic-size: 0 220px;
+  }
+
+  /* No hover lift on touch (causes sticky repaints) */
+  .track-grid-card:hover, .track-list-card:hover, .glass-card:hover {
+    transform: none !important;
+  }
+}
+
+/* Pause the aurora entirely when the tab is hidden or the user prefers less motion */
+@media (prefers-reduced-motion: reduce) {
+  .aurora-blob, .app-logo-wrap { animation: none !important; }
+}
