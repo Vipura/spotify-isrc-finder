@@ -141,27 +141,31 @@ app.get('/api/featured', async (req, res) => {
     const token = await getSpotifyToken();
     const headers = { Authorization: `Bearer ${token}`, 'User-Agent': 'curl/8.4.0' };
 
-    // Get Today's Top Hits (top 50 tracks)
-    const playlistId = '37i9dQZF1DXcBWIGoYBM5M';
-    const response = await directFetch(
-      `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=50&market=US&fields=items(track(id,name,artists,album,preview_url,external_ids,external_urls,duration_ms,popularity,uri))`,
-      { headers }
-    );
-    
-    let tracksPool = [];
-    if (response.ok) {
-      const data = await response.json();
-      tracksPool = (data.items || []).map(item => item.track).filter(Boolean).map(mapTrack);
-    } else {
-      // Fallback: search genre:pop
-      const fallback = await directFetch(
-        `https://api.spotify.com/v1/search?q=genre:pop&type=track&limit=50&market=US`,
+    // Spotify caps search limit at 10 and blocks editorial playlists for app tokens,
+    // so combine several small genre searches with random offsets for variety.
+    const years = `${new Date().getFullYear() - 1}-${new Date().getFullYear()}`;
+    const genres = shuffle(FEATURED_GENRES).slice(0, 5);
+    const results = await Promise.all(genres.map(async (genre) => {
+      try {
+        const offset = Math.floor(Math.random() * 20);
+        const q = encodeURIComponent(`genre:"${genre}" year:${years}`);
+        const r = await directFetch(
+          `https://api.spotify.com/v1/search?q=${q}&type=track&limit=10&offset=${offset}&market=US`,
+          { headers }
+        );
+        if (!r.ok) return [];
+        const d = await r.json();
+        return (d.tracks?.items || []).filter(Boolean).map(mapTrack);
+      } catch { return []; }
+    }));
+    let tracksPool = results.flat();
+
+    if (tracksPool.length === 0) {
+      const r = await directFetch(
+        `https://api.spotify.com/v1/search?q=${encodeURIComponent('year:' + years)}&type=track&limit=10&market=US`,
         { headers }
       );
-      if (fallback.ok) {
-        const fbData = await fallback.json();
-        tracksPool = (fbData.tracks?.items || []).map(mapTrack);
-      }
+      if (r.ok) tracksPool = ((await r.json()).tracks?.items || []).filter(Boolean).map(mapTrack);
     }
 
     // Dedupe by ID and by album art to avoid same cover repeating
