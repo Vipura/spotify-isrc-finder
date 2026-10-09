@@ -36,7 +36,12 @@ app.use(express.json());
 app.get('/', (req, res) => res.status(200).send('Backend is awake and running!'));
 
 // ─── Internal: get Spotify access token (server-side client credentials) ─
+let cachedToken = null;
+let tokenExpiresAt = 0;
+
 async function getSpotifyToken() {
+  if (cachedToken && Date.now() < tokenExpiresAt) return cachedToken;
+  
   const authString = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64');
   const response = await directFetch('https://accounts.spotify.com/api/token', {
     method: 'POST',
@@ -49,7 +54,10 @@ async function getSpotifyToken() {
   });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error_description || 'Failed to authenticate with Spotify');
-  return data.access_token;
+  
+  cachedToken = data.access_token;
+  tokenExpiresAt = Date.now() + (data.expires_in - 60) * 1000;
+  return cachedToken;
 }
 
 // ─── Shared track mapper ─────────────────────────────────────────────────
@@ -136,51 +144,61 @@ const shuffle = (arr) => {
   return a;
 };
 
+let cachedFeaturedPool = [];
+let featuredPoolExpiresAt = 0;
+
 app.get('/api/featured', async (req, res) => {
   try {
-    const token = await getSpotifyToken();
-    const headers = { Authorization: `Bearer ${token}`, 'User-Agent': 'curl/8.4.0' };
+    if (Date.now() > featuredPoolExpiresAt || cachedFeaturedPool.length < 8) {
+      const token = await getSpotifyToken();
+      const headers = { Authorization: `Bearer ${token}`, 'User-Agent': 'curl/8.4.0' };
 
-    // Spotify caps search limit at 10 and blocks editorial playlists for app tokens,
-    // so combine several small genre searches with random offsets for variety.
-    const years = `${new Date().getFullYear() - 1}-${new Date().getFullYear()}`;
-    const genres = shuffle(FEATURED_GENRES).slice(0, 5);
-    const results = await Promise.all(genres.map(async (genre) => {
-      try {
-        const offset = Math.floor(Math.random() * 20);
-        const q = encodeURIComponent(`genre:"${genre}" year:${years}`);
+      const years = `${new Date().getFullYear() - 1}-${new Date().getFullYear()}`;
+      const genres = shuffle(FEATURED_GENRES).slice(0, 5);
+      const results = await Promise.all(genres.map(async (genre) => {
+        try {
+          const offset = Math.floor(Math.random() * 20);
+          const q = encodeURIComponent(`genre:"${genre}" year:${years}`);
+          const r = await directFetch(
+            `https://api.spotify.com/v1/search?q=${q}&type=track&limit=10&offset=${offset}&market=US`,
+            { headers }
+          );
+          if (!r.ok) return [];
+          const d = await r.json();
+          return (d.tracks?.items || []).filter(Boolean).map(mapTrack);
+        } catch { return []; }
+      }));
+      let tracksPool = results.flat();
+
+      if (tracksPool.length === 0) {
         const r = await directFetch(
-          `https://api.spotify.com/v1/search?q=${q}&type=track&limit=10&offset=${offset}&market=US`,
+          `https://api.spotify.com/v1/search?q=${encodeURIComponent('year:' + years)}&type=track&limit=10&market=US`,
           { headers }
         );
-        if (!r.ok) return [];
-        const d = await r.json();
-        return (d.tracks?.items || []).filter(Boolean).map(mapTrack);
-      } catch { return []; }
-    }));
-    let tracksPool = results.flat();
+        if (r.ok) tracksPool = ((await r.json()).tracks?.items || []).filter(Boolean).map(mapTrack);
+      }
 
-    if (tracksPool.length === 0) {
-      const r = await directFetch(
-        `https://api.spotify.com/v1/search?q=${encodeURIComponent('year:' + years)}&type=track&limit=10&market=US`,
-        { headers }
-      );
-      if (r.ok) tracksPool = ((await r.json()).tracks?.items || []).filter(Boolean).map(mapTrack);
+      const seenIds = new Set();
+      const seenArt = new Set();
+      const uniquePool = [];
+      for (const t of tracksPool) {
+        if (!t.id || seenIds.has(t.id) || (t.albumArt && seenArt.has(t.albumArt))) continue;
+        seenIds.add(t.id);
+        if (t.albumArt) seenArt.add(t.albumArt);
+        uniquePool.push(t);
+      }
+      
+      if (uniquePool.length >= 8) {
+        cachedFeaturedPool = uniquePool;
+        featuredPoolExpiresAt = Date.now() + 10 * 60 * 1000; // cache pool for 10 minutes
+      } else if (uniquePool.length > 0) {
+        cachedFeaturedPool = uniquePool;
+        featuredPoolExpiresAt = Date.now() + 60 * 1000; // short cache if we got few tracks
+      }
     }
 
-    // Dedupe by ID and by album art to avoid same cover repeating
-    const seenIds = new Set();
-    const seenArt = new Set();
-    const uniquePool = [];
-    for (const t of tracksPool) {
-      if (!t.id || seenIds.has(t.id) || (t.albumArt && seenArt.has(t.albumArt))) continue;
-      seenIds.add(t.id);
-      if (t.albumArt) seenArt.add(t.albumArt);
-      uniquePool.push(t);
-    }
-
-    // Shuffle and pick 8
-    const tracks = shuffle(uniquePool).slice(0, 8);
+    // Shuffle and pick 8 from the cached pool
+    const tracks = shuffle(cachedFeaturedPool).slice(0, 8);
     res.json({ tracks });
   } catch (err) {
     console.error('Featured tracks error:', err.message);
