@@ -2,14 +2,25 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/jpeg" href="/logo.jpg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/isrc-icon-32.png" />
+    <link rel="icon" type="image/svg+xml" href="/isrc-icon.svg" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/isrc-icon-180.png" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#1DB954" />
     <title>ISRC Finder for IG</title>
     <meta name="description" content="Find the ISRC code of any Spotify track instantly. Paste a Spotify link to get the International Standard Recording Code for Instagram Music and more." />
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js');
+        });
+      }
+    </script>
   </body>
 </html>
 

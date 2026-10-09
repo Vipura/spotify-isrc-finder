@@ -443,6 +443,27 @@ export default function App() {
   const [activeTab, setActiveTab]   = useState('home');     // 'home' | 'saved'
   const searchRef = useRef(null);
 
+  const [installPrompt, setInstallPrompt] = useState(null);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+  }, []);
+
+  const handleInstallClick = () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    installPrompt.userChoice.then((choiceResult) => {
+      if (choiceResult.outcome === 'accepted') {
+        setInstallPrompt(null);
+      }
+    });
+  };
+
   // Load featured on mount
   useEffect(() => {
     setFeatLoading(true);
@@ -571,10 +592,22 @@ export default function App() {
       </div>
 
       <div className={`app-container ${nowPlaying ? 'has-player' : ''}`}>
+        
+        {/* Install Banner */}
+        {installPrompt && (
+          <div className="install-banner">
+            <div className="install-content">
+              <img src="/isrc-icon-32.png" alt="Icon" className="install-icon" />
+              <span>Install the web app as a shortcut for quick access</span>
+            </div>
+            <button className="install-btn" onClick={handleInstallClick}>Install</button>
+          </div>
+        )}
+
         {/* Header */}
         <header className="app-header">
           <div className="app-logo-wrap">
-            <img src="/logo.jpg" alt="ISRC Finder Logo" className="app-logo-img" />
+            <img src="/isrc-icon-192.png" alt="ISRC Finder Logo" className="app-logo-img" />
           </div>
           <h1 className="app-title">ISRC Finder for IG</h1>
           <p className="app-subtitle">Search by song, artist, or Spotify link — preview, copy &amp; save</p>
@@ -685,6 +718,18 @@ export default function App() {
 
         <AboutSection />
         <HowItWorks />
+
+        {/* Footer */}
+        <footer className="app-footer">
+          <div className="footer-links">
+            <a href="#" className="footer-link">Terms of Use</a>
+            <span className="footer-dot">•</span>
+            <a href="#" className="footer-link">Privacy Policy</a>
+            <span className="footer-dot">•</span>
+            <a href="#" className="footer-link">Instagram Help</a>
+          </div>
+          <p className="footer-copyright">&copy; {new Date().getFullYear()} ISRC Finder. Not affiliated with Spotify or Instagram.</p>
+        </footer>
       </div>
 
       {/* Mini Player */}
