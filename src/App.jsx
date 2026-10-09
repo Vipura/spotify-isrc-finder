@@ -21,6 +21,18 @@ function setSaved(tracks) {
   localStorage.setItem(LS_KEY, JSON.stringify(tracks));
 }
 
+// ─── Popular-tracks cache (refreshed once every 4 days) ───────────────
+const FEATURED_LS_KEY = 'isrc_featured_cache';
+const FEATURED_TTL_MS = 4 * 24 * 60 * 60 * 1000;
+function readFeaturedCache() {
+  try { return JSON.parse(localStorage.getItem(FEATURED_LS_KEY)); }
+  catch { return null; }
+}
+function writeFeaturedCache(tracks) {
+  try { localStorage.setItem(FEATURED_LS_KEY, JSON.stringify({ tracks, savedAt: Date.now() })); }
+  catch { /* storage full/unavailable */ }
+}
+
 // ─── URL / Track ID helpers ───────────────────────────────────────────
 function extractTrackId(input) {
   try {
@@ -89,8 +101,36 @@ async function safeFetchJson(url) {
   return data;
 }
 
+// Browser-side search cache: repeated searches cost 0 API calls for 24h
+const SEARCH_LS_KEY = 'isrc_search_cache';
+const SEARCH_TTL_MS = 24 * 60 * 60 * 1000;
+const SEARCH_MAX_ENTRIES = 40;
+const normalizeQuery = (q) => q.trim().toLowerCase().replace(/\s+/g, ' ');
+function readSearchCache() {
+  try { return JSON.parse(localStorage.getItem(SEARCH_LS_KEY)) || {}; }
+  catch { return {}; }
+}
+function writeSearchCache(cache) {
+  try { localStorage.setItem(SEARCH_LS_KEY, JSON.stringify(cache)); } catch { /* ignore */ }
+}
+
 async function apiSearch(q) {
-  return await safeFetchJson(`${BASE}/api/search?q=${encodeURIComponent(q)}`);
+  const key = normalizeQuery(q);
+  const cache = readSearchCache();
+  const hit = cache[key];
+  if (hit && Date.now() - hit.t < SEARCH_TTL_MS) return hit.d;
+
+  const data = await safeFetchJson(`${BASE}/api/search?q=${encodeURIComponent(key)}`);
+
+  cache[key] = { t: Date.now(), d: data };
+  const keys = Object.keys(cache);
+  if (keys.length > SEARCH_MAX_ENTRIES) {
+    keys.sort((a, b) => cache[a].t - cache[b].t)
+      .slice(0, keys.length - SEARCH_MAX_ENTRIES)
+      .forEach(k => delete cache[k]);
+  }
+  writeSearchCache(cache);
+  return data;
 }
 
 async function apiISRC(trackId) {
@@ -520,7 +560,6 @@ function LegalPage({ type, onBack }) {
 // ─── Main App ─────────────────────────────────────────────────────────
 export default function App() {
   const [query, setQuery]           = useState('');
-  const debouncedQuery              = useDebounce(query, 500); // Live search delay
   
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState('');
@@ -569,22 +608,22 @@ export default function App() {
     });
   };
 
-  // Load featured on mount and refresh periodically with other popular songs
-  const loadFeatured = useCallback((showSkeleton = false) => {
-    if (showSkeleton) setFeatLoading(true);
-    return apiFeatured()
-      .then(tracks => { if (tracks.length) setFeatured(tracks); })
-      .catch(err => console.error('Featured error:', err))
+  // Popular section: serve from localStorage; hit the API only when the cache is >4 days old
+  useEffect(() => {
+    const cached = readFeaturedCache();
+    const hasCache = cached?.tracks?.length > 0;
+    if (hasCache) setFeatured(cached.tracks);
+    if (hasCache && Date.now() - cached.savedAt < FEATURED_TTL_MS) {
+      setFeatLoading(false);
+      return;
+    }
+    apiFeatured()
+      .then(tracks => {
+        if (tracks.length) { setFeatured(tracks); writeFeaturedCache(tracks); }
+      })
+      .catch(err => console.error('Featured error:', err)) // stale cache (if any) stays on screen
       .finally(() => setFeatLoading(false));
   }, []);
-
-  useEffect(() => {
-    loadFeatured(true);
-    const id = setInterval(() => {
-      if (document.visibilityState === 'visible') loadFeatured(false);
-    }, 120000);
-    return () => clearInterval(id);
-  }, [loadFeatured]);
 
   // Save to localStorage whenever saved list changes
   useEffect(() => { setSaved(saved); }, [saved]);
@@ -600,20 +639,22 @@ export default function App() {
     });
   }, []);
 
-  // Live Search Effect
+  // Clearing the input restores the Popular section (no API call)
   useEffect(() => {
-    if (!debouncedQuery.trim()) {
-      setSearchResults(null);
-      setSearchArtists([]);
-      setError('');
-      setArtistTopTracks(null); // Fix: Ensure Popular section comes back
-      return;
-    }
-    
-    // Don't auto-search if viewing artist top tracks (unless they modify the query)
+    if (query.trim()) return;
+    setSearchResults(null);
+    setSearchArtists([]);
+    setError('');
     setArtistTopTracks(null);
-    performSearch(debouncedQuery);
-  }, [debouncedQuery]);
+  }, [query]);
+
+  // Search only runs when the user presses Enter or taps Search
+  const submitSearch = () => {
+    const q = query.trim();
+    if (!q || loading) return;
+    setArtistTopTracks(null);
+    performSearch(q);
+  };
 
   const performSearch = async (searchStr) => {
     setError('');
@@ -749,6 +790,8 @@ export default function App() {
               placeholder="Search song, artist, or paste Spotify link..."
               value={query}
               onChange={e => setQuery(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); submitSearch(); } }}
+              enterKeyHint="search"
               onFocus={e => {
                 if (window.innerWidth <= 768) {
                   const form = e.target.closest('.search-form');
@@ -765,7 +808,7 @@ export default function App() {
               </button>
             )}
           </div>
-          <button className="search-btn" disabled>
+          <button type="button" className="search-btn" onClick={submitSearch} disabled={loading || !query.trim()}>
             {loading ? <span className="spinner" /> : <><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Search</>}
           </button>
         </div>
@@ -813,12 +856,6 @@ export default function App() {
           {(displayTracks.length > 0 || contentLayout === 'featured') && (
             <div className="section-header mt-4">
               <h3 className="capitalize-first">{headingText}</h3>
-              {contentLayout === 'featured' && (
-                <button type="button" className="section-refresh" onClick={() => loadFeatured(true)} disabled={featLoading} aria-label="Refresh popular songs">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className={featLoading ? 'spin' : ''}><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-                  Refresh
-                </button>
-              )}
             </div>
           )}
 

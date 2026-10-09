@@ -102,8 +102,8 @@ class APICache {
 }
 
 const isrcCache = new APICache(24 * 60 * 60 * 1000); // 24 hours
-const searchCache = new APICache(30 * 60 * 1000);    // 30 mins
-const artistTopCache = new APICache(60 * 60 * 1000); // 1 hour
+const searchCache = new APICache(24 * 60 * 60 * 1000); // 24 hours
+const artistTopCache = new APICache(24 * 60 * 60 * 1000); // 24 hours
 
 // ─── Public endpoint: get ISRC for a track ID ───────────────────────────
 app.get('/api/isrc/:id', async (req, res) => {
@@ -137,13 +137,13 @@ app.get('/api/search', async (req, res) => {
   const q = req.query.q;
   if (!q || !q.trim()) return res.status(400).json({ error: 'Missing search query.' });
   
-  const normalizedQ = q.trim().toLowerCase();
+  const normalizedQ = q.trim().toLowerCase().replace(/\s+/g, ' ');
   const cached = searchCache.get(normalizedQ);
   if (cached) return res.json(cached);
 
   try {
     const token = await getSpotifyToken();
-    const encoded = encodeURIComponent(q.trim());
+    const encoded = encodeURIComponent(normalizedQ);
 
     const response = await directFetch(
       `https://api.spotify.com/v1/search?q=${encoded}&type=track,artist&limit=10&market=US`,
@@ -184,12 +184,15 @@ const shuffle = (arr) => {
   return a;
 };
 
+const FEATURED_TTL_MS   = 4 * 24 * 60 * 60 * 1000; // refresh Popular section once per 4 days
+const FEATURED_RETRY_MS = 15 * 60 * 1000;           // back off 15 min after a failed refresh
 let cachedFeaturedPool = [];
 let featuredPoolExpiresAt = 0;
+let featuredRefreshPromise = null;
 
-app.get('/api/featured', async (req, res) => {
-  try {
-    if (Date.now() > featuredPoolExpiresAt || cachedFeaturedPool.length < 8) {
+async function refreshFeaturedPool() {
+  {
+    {
       const token = await getSpotifyToken();
       const headers = { Authorization: `Bearer ${token}`, 'User-Agent': 'curl/8.4.0' };
 
@@ -230,16 +233,34 @@ app.get('/api/featured', async (req, res) => {
       
       if (uniquePool.length >= 8) {
         cachedFeaturedPool = uniquePool;
-        featuredPoolExpiresAt = Date.now() + 10 * 60 * 1000; // cache pool for 10 minutes
-      } else if (uniquePool.length > 0) {
-        cachedFeaturedPool = uniquePool;
-        featuredPoolExpiresAt = Date.now() + 60 * 1000; // short cache if we got few tracks
+        featuredPoolExpiresAt = Date.now() + FEATURED_TTL_MS;
+      } else {
+        // Not enough fresh data: keep any stale pool and retry later
+        if (uniquePool.length > cachedFeaturedPool.length) cachedFeaturedPool = uniquePool;
+        featuredPoolExpiresAt = Date.now() + FEATURED_RETRY_MS;
       }
     }
+  }
+}
 
-    // Shuffle and pick 8 from the cached pool
-    const tracks = shuffle(cachedFeaturedPool).slice(0, 8);
-    res.json({ tracks });
+app.get('/api/featured', async (req, res) => {
+  try {
+    if (Date.now() > featuredPoolExpiresAt || cachedFeaturedPool.length < 8) {
+      // Share one refresh between concurrent visitors
+      if (!featuredRefreshPromise) {
+        featuredRefreshPromise = refreshFeaturedPool()
+          .catch(err => {
+            console.error('Featured refresh failed:', err.message);
+            featuredPoolExpiresAt = Date.now() + FEATURED_RETRY_MS;
+          })
+          .finally(() => { featuredRefreshPromise = null; });
+      }
+      await featuredRefreshPromise;
+    }
+
+    if (cachedFeaturedPool.length === 0) return res.status(503).json({ error: 'Popular songs temporarily unavailable.' });
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.json({ tracks: shuffle(cachedFeaturedPool).slice(0, 8) });
   } catch (err) {
     console.error('Featured tracks error:', err.message);
     res.status(500).json({ error: err.message });
