@@ -1,4 +1,4 @@
-/* ─── Page Layout ─────────────────────────────────────────────────── */
+﻿/* â”€â”€â”€ Page Layout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .app-container {
   width: 100%;
   max-width: 980px;
@@ -7,10 +7,10 @@
 }
 
 .app-container.has-player {
-  padding-bottom: 110px;
+  padding-bottom: 140px;
 }
 
-/* ─── Header ─────────────────────────────────────────────────────── */
+/* â”€â”€â”€ Header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .app-header {
   text-align: center;
   margin-bottom: 2rem;
@@ -61,7 +61,7 @@
   font-weight: 400;
 }
 
-/* ─── Search Form ─────────────────────────────────────────────────── */
+/* â”€â”€â”€ Search Form â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .search-form {
   display: flex;
   gap: 10px;
@@ -149,7 +149,7 @@
   box-shadow: 0 8px 30px rgba(255, 255, 255, 0.2);
 }
 
-/* ─── Error Banner ────────────────────────────────────────────────── */
+/* â”€â”€â”€ Error Banner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .error-banner {
   display: flex;
   align-items: center;
@@ -170,7 +170,7 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* ─── Tabs ────────────────────────────────────────────────────────── */
+/* â”€â”€â”€ Tabs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .tabs {
   display: flex;
   gap: 8px;
@@ -202,7 +202,7 @@
   color: #1DB954;
 }
 
-/* ─── Sections Header ─────────────────────────────────────────────── */
+/* â”€â”€â”€ Sections Header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .section-header {
   display: flex;
   justify-content: space-between;
@@ -229,7 +229,7 @@
 
 .mt-4 { margin-top: 1.5rem; }
 
-/* ─── Artist Suggestions ──────────────────────────────────────────── */
+/* â”€â”€â”€ Artist Suggestions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .suggestions-section {
   margin-bottom: 2rem;
   animation: fadeIn 0.4s ease;
@@ -298,7 +298,7 @@
   color: var(--text-secondary);
 }
 
-/* ─── Tracks Grid (Popular on Spotify) ────────────────────────────── */
+/* â”€â”€â”€ Tracks Grid (Popular on Spotify) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .tracks-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -314,7 +314,7 @@
   .tracks-grid { grid-template-columns: repeat(2, 1fr); gap: 0.65rem; }
 }
 
-/* ─── Glass Card (iOS 27 Glassmorphism) ─────────────────────────── */
+/* â”€â”€â”€ Glass Card (iOS 27 Glassmorphism) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .glass-card {
   background: rgba(255, 255, 255, 0.055) !important;
   border: 1px solid rgba(255, 255, 255, 0.14) !important;
@@ -568,7 +568,7 @@
   color: #1DB954;
 }
 
-/* ─── Tracks List (Search Results / Top Tracks) ───────────────────── */
+/* â”€â”€â”€ Tracks List (Search Results / Top Tracks) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .tracks-list {
   display: flex;
   flex-direction: column;
@@ -781,7 +781,7 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* ─── Skeleton Loading ────────────────────────────────────────────── */
+/* â”€â”€â”€ Skeleton Loading â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .skeleton-card {
   aspect-ratio: 3 / 4;
   border-radius: 14px;
@@ -795,7 +795,7 @@
   50%       { opacity: 0.7; }
 }
 
-/* ─── Empty State ─────────────────────────────────────────────────── */
+/* â”€â”€â”€ Empty State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .empty-state {
   text-align: center;
   padding: 4rem 2rem;
@@ -806,7 +806,7 @@
   gap: 0.75rem;
 }
 
-/* ─── Mini Player (Bottom Bar) ────────────────────────────────────── */
+/* â”€â”€â”€ Mini Player (Bottom Bar) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .mini-player {
   position: fixed;
   bottom: 0;
@@ -881,6 +881,8 @@
   min-width: 0;
 }
 
+.mp-times span { min-width: 2.5ch; }
+
 .mp-play-btn {
   width: 44px;
   height: 44px;
@@ -952,7 +954,22 @@
   color: var(--text);
 }
 
-/* ─── Spinner ─────────────────────────────────────────────────────── */
+/* Mobile: art | info | play | close on row 1, progress bar full-width on row 2 */
+@media (max-width: 640px) {
+  .mini-player {
+    flex-wrap: wrap;
+    gap: 0.5rem 0.75rem;
+    padding: 0.7rem 1rem calc(0.7rem + env(safe-area-inset-bottom));
+  }
+  .mp-art { width: 46px; height: 46px; }
+  .mp-info { flex: 1; width: auto; min-width: 0; }
+  .mp-controls { display: contents; }
+  .mp-play-btn { order: 2; }
+  .mp-close { order: 3; }
+  .mp-progress-wrap { order: 4; flex: 1 0 100%; padding-top: 2px; }
+}
+
+/* â”€â”€â”€ Spinner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .spinner {
   width: 18px;
   height: 18px;
@@ -967,7 +984,7 @@
   to { transform: rotate(360deg); }
 }
 
-/* ─── About Section & How It Works ────────────────────────────────── */
+/* â”€â”€â”€ About Section & How It Works â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .about-section {
   margin-top: 2rem;
   background: rgba(255,255,255,0.03);
@@ -1088,61 +1105,94 @@
   line-height: 1.55;
 }
 
-/* ─── Install Banner ─────────────────────────────────────────────── */
+/* â”€â”€â”€ Install Banner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .install-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: rgba(29, 185, 84, 0.15);
-  border: 1px solid rgba(29, 185, 84, 0.3);
-  padding: 10px 16px;
-  border-radius: 12px;
+  position: relative;
+  background: linear-gradient(135deg, rgba(29, 185, 84, 0.22), rgba(193, 53, 132, 0.18));
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  padding: 12px 14px;
+  border-radius: 16px;
   margin-bottom: 24px;
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35), 0 0 24px rgba(29, 185, 84, 0.15);
 }
 
-.install-content {
+.install-row {
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 0.85rem;
-  color: var(--text);
-  font-weight: 500;
 }
 
 .install-icon {
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.install-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text);
 }
 
 .install-btn {
-  background: var(--brand);
-  color: #000;
+  background: linear-gradient(135deg, #1ed760, #1DB954);
+  color: #04130a;
   border: none;
-  border-radius: 20px;
-  padding: 6px 14px;
-  font-size: 0.8rem;
-  font-weight: 700;
+  border-radius: 9999px;
+  padding: 9px 20px;
+  min-height: 40px;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 800;
   cursor: pointer;
-  transition: opacity 0.2s;
+  flex-shrink: 0;
+  box-shadow: 0 4px 16px rgba(29, 185, 84, 0.45);
+  transition: transform 0.2s, box-shadow 0.2s;
 }
 
-.install-btn:hover {
-  opacity: 0.85;
+.install-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 22px rgba(29, 185, 84, 0.6); }
+.install-btn:active { transform: scale(0.97); }
+
+.install-dismiss {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  cursor: pointer;
+  flex-shrink: 0;
 }
+.install-dismiss:hover { color: var(--text); background: rgba(255, 255, 255, 0.1); }
+
+.install-hint {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.install-hint strong { color: var(--text); }
 
 @media (max-width: 480px) {
-  .install-banner {
-    flex-direction: column;
-    gap: 12px;
-    align-items: stretch;
-    text-align: center;
-  }
-  .install-content { justify-content: center; }
+  .install-row { flex-wrap: wrap; }
+  .install-text { flex: 1 1 0; }
+  .install-btn { flex: 1 0 100%; order: 3; }
+  .install-dismiss { position: absolute; top: 8px; right: 8px; }
+  .install-text { padding-right: 24px; }
 }
 
-/* ─── Footer ─────────────────────────────────────────────────────── */
+/* â”€â”€â”€ Footer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .app-footer {
   margin-top: 40px;
   padding-top: 24px;
@@ -1155,27 +1205,140 @@
   align-items: center;
   justify-content: center;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 18px;
   flex-wrap: wrap;
 }
 
 .footer-link {
+  background: none;
+  border: none;
+  font-family: inherit;
+  padding: 4px 2px;
+  cursor: pointer;
   color: var(--text-secondary);
   text-decoration: none;
   font-size: 0.85rem;
   transition: color 0.2s;
 }
 
-.footer-link:hover {
-  color: var(--brand);
-}
+.footer-link:hover { color: var(--green-hover); }
 
 .footer-dot {
   color: rgba(255, 255, 255, 0.2);
   font-size: 0.8rem;
 }
 
+.footer-creator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.footer-made {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+.footer-made strong {
+  background: linear-gradient(90deg, #1DB954, #fd1d1d, #c13584, #fcb045);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-weight: 800;
+}
+
+.footer-socials { display: flex; gap: 12px; }
+
+.social-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  transition: transform 0.25s, background 0.25s, box-shadow 0.25s, border-color 0.25s;
+}
+.social-btn:hover { transform: translateY(-3px) scale(1.06); }
+.social-ig:hover {
+  background: linear-gradient(45deg, #f09433, #dc2743 50%, #bc1888);
+  border-color: transparent;
+  box-shadow: 0 6px 22px rgba(220, 39, 67, 0.45);
+}
+.social-gh:hover {
+  background: #24292f;
+  border-color: rgba(255, 255, 255, 0.3);
+  box-shadow: 0 6px 22px rgba(255, 255, 255, 0.15);
+}
+
 .footer-copyright {
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.4);
   font-size: 0.75rem;
+}
+
+/* â”€â”€â”€ Legal Pages â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+.legal-page { animation: fadeIn 0.35s ease; }
+
+.legal-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 8px 16px 8px 10px;
+  border-radius: 9999px;
+  cursor: pointer;
+  margin-bottom: 1.25rem;
+  transition: all var(--transition);
+}
+.legal-back:hover { color: var(--text); border-color: rgba(29, 185, 84, 0.5); background: rgba(29, 185, 84, 0.1); }
+
+.legal-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 20px;
+  padding: 2rem;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
+}
+
+.legal-title {
+  font-size: 2rem;
+  font-weight: 900;
+  letter-spacing: -0.5px;
+  background: linear-gradient(90deg, #ffffff 0%, #1DB954 55%, #c13584 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 0.4rem;
+}
+
+.legal-updated { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 1.25rem; }
+
+.legal-intro {
+  color: var(--text-secondary);
+  line-height: 1.7;
+  font-size: 0.95rem;
+  padding: 1rem 1.1rem;
+  border-left: 3px solid var(--green);
+  background: rgba(29, 185, 84, 0.06);
+  border-radius: 0 12px 12px 0;
+  margin-bottom: 1.5rem;
+}
+
+.legal-section { margin-bottom: 1.4rem; }
+.legal-section h2 { font-size: 1.05rem; font-weight: 700; color: var(--text); margin-bottom: 0.4rem; }
+.legal-section p { font-size: 0.92rem; color: var(--text-secondary); line-height: 1.7; }
+
+@media (max-width: 520px) {
+  .legal-card { padding: 1.4rem 1.1rem; }
+  .legal-title { font-size: 1.6rem; }
 }
