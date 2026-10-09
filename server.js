@@ -77,12 +77,44 @@ function mapTrack(t) {
   };
 }
 
+// ─── Simple In-Memory Cache ──────────────────────────────────────────────
+class APICache {
+  constructor(ttlMs) {
+    this.cache = new Map();
+    this.ttlMs = ttlMs;
+  }
+  get(key) {
+    if (!this.cache.has(key)) return null;
+    const item = this.cache.get(key);
+    if (Date.now() > item.expiry) {
+      this.cache.delete(key);
+      return null;
+    }
+    return item.data;
+  }
+  set(key, data) {
+    this.cache.set(key, { data, expiry: Date.now() + this.ttlMs });
+    if (this.cache.size > 1000) {
+      const firstKey = this.cache.keys().next().value;
+      this.cache.delete(firstKey);
+    }
+  }
+}
+
+const isrcCache = new APICache(24 * 60 * 60 * 1000); // 24 hours
+const searchCache = new APICache(30 * 60 * 1000);    // 30 mins
+const artistTopCache = new APICache(60 * 60 * 1000); // 1 hour
+
 // ─── Public endpoint: get ISRC for a track ID ───────────────────────────
 app.get('/api/isrc/:id', async (req, res) => {
+  const id = req.params.id;
+  const cached = isrcCache.get(id);
+  if (cached) return res.json(cached);
+
   try {
     const token = await getSpotifyToken();
     const response = await directFetch(
-      `https://api.spotify.com/v1/tracks/${req.params.id}`,
+      `https://api.spotify.com/v1/tracks/${id}`,
       { headers: { Authorization: `Bearer ${token}`, 'User-Agent': 'curl/8.4.0' } }
     );
     const responseText = await response.text();
@@ -92,6 +124,8 @@ app.get('/api/isrc/:id', async (req, res) => {
       return res.status(500).json({ error: 'Invalid response from Spotify: ' + responseText.slice(0, 100) });
     }
     if (!response.ok) return res.status(response.status).json(data);
+    
+    isrcCache.set(id, data);
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -102,6 +136,10 @@ app.get('/api/isrc/:id', async (req, res) => {
 app.get('/api/search', async (req, res) => {
   const q = req.query.q;
   if (!q || !q.trim()) return res.status(400).json({ error: 'Missing search query.' });
+  
+  const normalizedQ = q.trim().toLowerCase();
+  const cached = searchCache.get(normalizedQ);
+  if (cached) return res.json(cached);
 
   try {
     const token = await getSpotifyToken();
@@ -124,7 +162,9 @@ app.get('/api/search', async (req, res) => {
       spotifyUrl: a.external_urls?.spotify,
     }));
 
-    res.json({ tracks, artists });
+    const result = { tracks, artists };
+    searchCache.set(normalizedQ, result);
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -208,9 +248,12 @@ app.get('/api/featured', async (req, res) => {
 
 // ─── Public endpoint: get artist top tracks (popularity sorted) ──────────
 app.get('/api/artists/:id/top-tracks', async (req, res) => {
+  const artistId = req.params.id;
+  const cached = artistTopCache.get(artistId);
+  if (cached) return res.json(cached);
+
   try {
     const token = await getSpotifyToken();
-    const artistId = req.params.id;
 
     // Try the official top-tracks endpoint (returns tracks in popularity order - same as Spotify app)
     const response = await directFetch(
@@ -221,7 +264,9 @@ app.get('/api/artists/:id/top-tracks', async (req, res) => {
     if (response.ok) {
       const data = await response.json();
       const tracks = (data.tracks || []).slice(0, 10).map(mapTrack);
-      return res.json({ tracks });
+      const result = { tracks };
+      artistTopCache.set(artistId, result);
+      return res.json(result);
     }
 
     // Fallback: get artist name, then search 3 pages of 10 tracks (to bypass Spotify limits) and sort by popularity
@@ -267,7 +312,9 @@ app.get('/api/artists/:id/top-tracks', async (req, res) => {
       .slice(0, 10)
       .map(mapTrack);
 
-    return res.json({ tracks: artistTracks, artistName });
+    const resultFallback = { tracks: artistTracks, artistName };
+    artistTopCache.set(artistId, resultFallback);
+    return res.json(resultFallback);
   } catch (err) {
     console.error('Artist top tracks error:', err.message);
     res.status(500).json({ error: err.message });
