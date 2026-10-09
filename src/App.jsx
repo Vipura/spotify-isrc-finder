@@ -28,8 +28,8 @@ function readFeaturedCache() {
   try { return JSON.parse(localStorage.getItem(FEATURED_LS_KEY)); }
   catch { return null; }
 }
-function writeFeaturedCache(tracks) {
-  try { localStorage.setItem(FEATURED_LS_KEY, JSON.stringify({ tracks, savedAt: Date.now() })); }
+function writeFeaturedCache(tracks, expiresAt) {
+  try { localStorage.setItem(FEATURED_LS_KEY, JSON.stringify({ tracks, savedAt: Date.now(), expiresAt })); }
   catch { /* storage full/unavailable */ }
 }
 
@@ -144,7 +144,7 @@ async function apiISRC(trackId) {
 
 async function apiFeatured() {
   const data = await safeFetchJson(`${BASE}/api/featured`);
-  return data.tracks || [];
+  return { tracks: data.tracks || [], expiresAt: data.expiresAt };
 }
 
 async function apiArtistTopTracks(id) {
@@ -613,13 +613,14 @@ export default function App() {
     const cached = readFeaturedCache();
     const hasCache = cached?.tracks?.length > 0;
     if (hasCache) setFeatured(cached.tracks);
-    if (hasCache && Date.now() - cached.savedAt < FEATURED_TTL_MS) {
+    const validUntil = cached?.expiresAt || (cached?.savedAt + FEATURED_TTL_MS);
+    if (hasCache && Date.now() < validUntil) {
       setFeatLoading(false);
       return;
     }
     apiFeatured()
-      .then(tracks => {
-        if (tracks.length) { setFeatured(tracks); writeFeaturedCache(tracks); }
+      .then(({ tracks, expiresAt }) => {
+        if (tracks.length) { setFeatured(tracks); writeFeaturedCache(tracks, expiresAt); }
       })
       .catch(err => console.error('Featured error:', err)) // stale cache (if any) stays on screen
       .finally(() => setFeatLoading(false));

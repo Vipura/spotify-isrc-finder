@@ -232,7 +232,8 @@ async function refreshFeaturedPool() {
       }
       
       if (uniquePool.length >= 8) {
-        cachedFeaturedPool = uniquePool;
+        // Pick the 8 songs ONCE; every visitor gets this same set until the next refresh
+        cachedFeaturedPool = shuffle(uniquePool).slice(0, 8);
         featuredPoolExpiresAt = Date.now() + FEATURED_TTL_MS;
       } else {
         // Not enough fresh data: keep any stale pool and retry later
@@ -245,7 +246,7 @@ async function refreshFeaturedPool() {
 
 app.get('/api/featured', async (req, res) => {
   try {
-    if (Date.now() > featuredPoolExpiresAt || cachedFeaturedPool.length < 8) {
+    if (Date.now() > featuredPoolExpiresAt) {
       // Share one refresh between concurrent visitors
       if (!featuredRefreshPromise) {
         featuredRefreshPromise = refreshFeaturedPool()
@@ -260,7 +261,7 @@ app.get('/api/featured', async (req, res) => {
 
     if (cachedFeaturedPool.length === 0) return res.status(503).json({ error: 'Popular songs temporarily unavailable.' });
     res.set('Cache-Control', 'public, max-age=3600');
-    res.json({ tracks: shuffle(cachedFeaturedPool).slice(0, 8) });
+    res.json({ tracks: cachedFeaturedPool.slice(0, 8), expiresAt: featuredPoolExpiresAt });
   } catch (err) {
     console.error('Featured tracks error:', err.message);
     res.status(500).json({ error: err.message });
