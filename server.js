@@ -123,33 +123,55 @@ app.get('/api/search', async (req, res) => {
 });
 
 // ─── Public endpoint: featured / popular tracks ──────────────────────────
+const FEATURED_GENRES = [
+  'pop', 'hip hop', 'rap', 'r&b', 'dance', 'latin', 'k-pop', 'rock',
+  'indie', 'electronic', 'afrobeats', 'bollywood', 'punjabi', 'edm', 'alternative',
+];
+const shuffle = (arr) => {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+};
+
 app.get('/api/featured', async (req, res) => {
   try {
     const token = await getSpotifyToken();
+    const headers = { Authorization: `Bearer ${token}`, 'User-Agent': 'curl/8.4.0' };
+    const year = new Date().getFullYear();
 
-    const playlistId = '37i9dQZF1DXcBWIGoYBM5M'; // Today's Top Hits
-    const response = await directFetch(
-      `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=8&market=US&fields=items(track(id,name,artists,album,preview_url,external_ids,external_urls,duration_ms,popularity,uri))`,
-      { headers: { Authorization: `Bearer ${token}`, 'User-Agent': 'curl/8.4.0' } }
-    );
-    const data = await response.json();
+    // Pick a few random genres and query each for recent tracks
+    const genres = shuffle(FEATURED_GENRES).slice(0, 4);
+    const results = await Promise.all(genres.map(async (g) => {
+      try {
+        const offset = Math.floor(Math.random() * 30);
+        const q = encodeURIComponent(`genre:"${g}" year:${year - 1}-${year}`);
+        const r = await directFetch(
+          `https://api.spotify.com/v1/search?q=${q}&type=track&limit=20&offset=${offset}&market=US`,
+          { headers }
+        );
+        if (!r.ok) return [];
+        const d = await r.json();
+        return (d.tracks?.items || []).map(mapTrack);
+      } catch { return []; }
+    }));
 
-    if (!response.ok) {
-      // Fallback: use search for popular tracks
-      const fallback = await directFetch(
-        `https://api.spotify.com/v1/search?q=genre:pop&type=track&limit=8&market=US`,
-        { headers: { Authorization: `Bearer ${token}`, 'User-Agent': 'curl/8.4.0' } }
-      );
-      const fbData = await fallback.json();
-      const tracks = (fbData.tracks?.items || []).map(mapTrack);
-      return res.json({ tracks });
+    // Dedupe by id and by album art (avoids the same cover repeating)
+    const seenIds = new Set();
+    const seenArt = new Set();
+    const pool = [];
+    for (const t of results.flat()) {
+      if (!t.id || seenIds.has(t.id) || (t.albumArt && seenArt.has(t.albumArt))) continue;
+      seenIds.add(t.id);
+      if (t.albumArt) seenArt.add(t.albumArt);
+      pool.push(t);
     }
 
-    const tracks = (data.items || [])
-      .map(item => item.track)
-      .filter(Boolean)
-      .slice(0, 8)
-      .map(mapTrack);
+    // Prefer the most popular tracks, then shuffle for variety
+    const top = pool.sort((a, b) => b.popularity - a.popularity).slice(0, 16);
+    const tracks = shuffle(top).slice(0, 8);
 
     res.json({ tracks });
   } catch (err) {

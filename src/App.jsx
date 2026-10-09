@@ -569,14 +569,22 @@ export default function App() {
     });
   };
 
-  // Load featured on mount
-  useEffect(() => {
-    setFeatLoading(true);
-    apiFeatured()
-      .then(setFeatured)
+  // Load featured on mount and refresh periodically with other popular songs
+  const loadFeatured = useCallback((showSkeleton = false) => {
+    if (showSkeleton) setFeatLoading(true);
+    return apiFeatured()
+      .then(tracks => { if (tracks.length) setFeatured(tracks); })
       .catch(err => console.error('Featured error:', err))
       .finally(() => setFeatLoading(false));
   }, []);
+
+  useEffect(() => {
+    loadFeatured(true);
+    const id = setInterval(() => {
+      if (document.visibilityState === 'visible') loadFeatured(false);
+    }, 120000);
+    return () => clearInterval(id);
+  }, [loadFeatured]);
 
   // Save to localStorage whenever saved list changes
   useEffect(() => { setSaved(saved); }, [saved]);
@@ -796,9 +804,15 @@ export default function App() {
           )}
 
           {/* Tracks Heading */}
-          {(displayTracks.length > 0 || (contentLayout === 'featured' && featLoading)) && (
+          {(displayTracks.length > 0 || contentLayout === 'featured') && (
             <div className="section-header mt-4">
               <h3 className="capitalize-first">{headingText}</h3>
+              {contentLayout === 'featured' && (
+                <button type="button" className="section-refresh" onClick={() => loadFeatured(true)} disabled={featLoading} aria-label="Refresh popular songs">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className={featLoading ? 'spin' : ''}><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                  Refresh
+                </button>
+              )}
             </div>
           )}
 

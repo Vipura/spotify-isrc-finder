@@ -1374,3 +1374,19 @@
   .about-toggle { padding: 1rem 1.2rem; font-size: 0.95rem; }
 }
 
+
+/* --- Popular refresh button --- */
+.section-header { align-items: center; }
+.section-header h3 { color: var(--text); }
+.section-refresh {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 0.35rem 0.8rem; border-radius: 9999px;
+  font: inherit; font-size: 0.75rem; font-weight: 700;
+  color: var(--text-secondary); cursor: pointer;
+  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+  transition: all var(--transition);
+}
+.section-refresh:hover:not(:disabled) { color: #1DB954; border-color: rgba(29,185,84,0.4); }
+.section-refresh:disabled { opacity: 0.6; cursor: default; }
+.section-refresh .spin { animation: refreshSpin 0.8s linear infinite; }
+@keyframes refreshSpin { to { transform: rotate(360deg); } }
