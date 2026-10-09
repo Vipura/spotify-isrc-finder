@@ -140,39 +140,43 @@ app.get('/api/featured', async (req, res) => {
   try {
     const token = await getSpotifyToken();
     const headers = { Authorization: `Bearer ${token}`, 'User-Agent': 'curl/8.4.0' };
-    const year = new Date().getFullYear();
 
-    // Pick a few random genres and query each for recent tracks
-    const genres = shuffle(FEATURED_GENRES).slice(0, 4);
-    const results = await Promise.all(genres.map(async (g) => {
-      try {
-        const offset = Math.floor(Math.random() * 30);
-        const q = encodeURIComponent(`genre:"${g}" year:${year - 1}-${year}`);
-        const r = await directFetch(
-          `https://api.spotify.com/v1/search?q=${q}&type=track&limit=20&offset=${offset}&market=US`,
-          { headers }
-        );
-        if (!r.ok) return [];
-        const d = await r.json();
-        return (d.tracks?.items || []).map(mapTrack);
-      } catch { return []; }
-    }));
+    // Get Today's Top Hits (top 50 tracks)
+    const playlistId = '37i9dQZF1DXcBWIGoYBM5M';
+    const response = await directFetch(
+      `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=50&market=US&fields=items(track(id,name,artists,album,preview_url,external_ids,external_urls,duration_ms,popularity,uri))`,
+      { headers }
+    );
+    
+    let tracksPool = [];
+    if (response.ok) {
+      const data = await response.json();
+      tracksPool = (data.items || []).map(item => item.track).filter(Boolean).map(mapTrack);
+    } else {
+      // Fallback: search genre:pop
+      const fallback = await directFetch(
+        `https://api.spotify.com/v1/search?q=genre:pop&type=track&limit=50&market=US`,
+        { headers }
+      );
+      if (fallback.ok) {
+        const fbData = await fallback.json();
+        tracksPool = (fbData.tracks?.items || []).map(mapTrack);
+      }
+    }
 
-    // Dedupe by id and by album art (avoids the same cover repeating)
+    // Dedupe by ID and by album art to avoid same cover repeating
     const seenIds = new Set();
     const seenArt = new Set();
-    const pool = [];
-    for (const t of results.flat()) {
+    const uniquePool = [];
+    for (const t of tracksPool) {
       if (!t.id || seenIds.has(t.id) || (t.albumArt && seenArt.has(t.albumArt))) continue;
       seenIds.add(t.id);
       if (t.albumArt) seenArt.add(t.albumArt);
-      pool.push(t);
+      uniquePool.push(t);
     }
 
-    // Prefer the most popular tracks, then shuffle for variety
-    const top = pool.sort((a, b) => b.popularity - a.popularity).slice(0, 16);
-    const tracks = shuffle(top).slice(0, 8);
-
+    // Shuffle and pick 8
+    const tracks = shuffle(uniquePool).slice(0, 8);
     res.json({ tracks });
   } catch (err) {
     console.error('Featured tracks error:', err.message);
