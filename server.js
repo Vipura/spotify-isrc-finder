@@ -226,4 +226,51 @@ app.get('/api/artists/:id/top-tracks', async (req, res) => {
   }
 });
 
+// ─── Public endpoint: resolve a 30s preview (Deezer by ISRC → iTunes verified) ─
+const norm = s => (s || '').toLowerCase()
+  .replace(/\(.*?\)|\[.*?\]/g, ' ')
+  .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+  .replace(/\s+/g, ' ').trim();
+
+app.get('/api/preview', async (req, res) => {
+  const { isrc, title, artist, duration } = req.query;
+  const durMs = Number(duration) || 0;
+
+  // 1. Deezer: exact lookup by ISRC (free, no key)
+  if (isrc) {
+    try {
+      const r = await directFetch(`https://api.deezer.com/track/isrc:${encodeURIComponent(isrc)}`);
+      const d = await r.json();
+      if (d && !d.error && d.preview) {
+        return res.json({ previewUrl: d.preview, source: 'deezer' });
+      }
+    } catch (e) {
+      console.warn('Deezer preview error:', e.message);
+    }
+  }
+
+  // 2. iTunes fallback, strictly verified by title + artist + duration
+  if (title && artist) {
+    try {
+      const mainArtist = String(artist).split(',')[0].trim();
+      const term = encodeURIComponent(`${title} ${mainArtist}`);
+      const r = await directFetch(`https://itunes.apple.com/search?term=${term}&entity=song&limit=10`);
+      const d = JSON.parse(await r.text());
+      const wantTitle = norm(title);
+      const wantArtist = norm(mainArtist);
+      const match = (d.results || []).find(x =>
+        x.previewUrl &&
+        norm(x.trackName) === wantTitle &&
+        norm(x.artistName).includes(wantArtist) &&
+        (!durMs || Math.abs((x.trackTimeMillis || 0) - durMs) <= 5000)
+      );
+      if (match) return res.json({ previewUrl: match.previewUrl, source: 'itunes' });
+    } catch (e) {
+      console.warn('iTunes preview error:', e.message);
+    }
+  }
+
+  res.json({ previewUrl: null, source: null });
+});
+
 app.listen(PORT, () => console.log(`✓ Backend running at http://localhost:${PORT}`));

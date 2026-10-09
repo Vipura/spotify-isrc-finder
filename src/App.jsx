@@ -120,6 +120,7 @@ function MiniPlayer({ track, onClose }) {
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [loadingAudio, setLoadingAudio] = useState(true);
+  const [hasPreview, setHasPreview] = useState(false);
 
   useEffect(() => {
     const a = audioRef.current;
@@ -129,25 +130,31 @@ function MiniPlayer({ track, onClose }) {
 
     const loadAudio = async () => {
       setLoadingAudio(true);
-      let urlToPlay = track.previewUrl;
+      setHasPreview(false);
+      let urlToPlay = null;
 
-      // If Spotify didn't provide a preview URL, dynamically fetch one from iTunes!
-      if (!urlToPlay) {
-        try {
-          const query = encodeURIComponent(`${track.name} ${track.artists.split(',')[0]}`);
-          const res = await fetch(`https://itunes.apple.com/search?term=${query}&entity=song&limit=1`);
-          const data = await res.json();
-          if (data.results && data.results.length > 0 && data.results[0].previewUrl) {
-            urlToPlay = data.results[0].previewUrl;
-          }
-        } catch (err) {
-          console.error("iTunes fetch error:", err);
-        }
+      // Backend resolves: Deezer (by ISRC) → iTunes (verified by title/artist/duration)
+      try {
+        const params = new URLSearchParams({
+          isrc: track.isrc || '',
+          title: track.name || '',
+          artist: track.artists || '',
+          duration: String(track.duration || ''),
+        });
+        const res = await fetch(`${BASE}/api/preview?${params}`);
+        const data = await res.json();
+        urlToPlay = data.previewUrl || null;
+      } catch (err) {
+        console.error("Preview fetch error:", err);
       }
+
+      // Last resort: Spotify's own preview URL, if it has one
+      if (!urlToPlay) urlToPlay = track.previewUrl || null;
 
       if (isCancelled) return;
 
       if (urlToPlay) {
+        setHasPreview(true);
         a.src = urlToPlay;
         a.play().then(() => {
           if (!isCancelled) {
@@ -189,7 +196,7 @@ function MiniPlayer({ track, onClose }) {
 
   const togglePlay = () => {
     const a = audioRef.current;
-    if (!a || !a.src) return;
+    if (!a || !hasPreview) return;
     if (playing) { a.pause(); setPlaying(false); }
     else { a.play(); setPlaying(true); }
   };
@@ -211,16 +218,16 @@ function MiniPlayer({ track, onClose }) {
       <div className="mp-info">
         <div className="mp-name">{track.name}</div>
         <div className="mp-artist">{track.artists}</div>
-        <div className="mp-badge">{loadingAudio ? 'Loading...' : 'Preview · 30s'}</div>
+        <div className="mp-badge">{loadingAudio ? 'Loading...' : (hasPreview ? 'Preview · 30s' : 'No Preview')}</div>
       </div>
       <div className="mp-controls">
-        <button className="mp-play-btn" onClick={togglePlay} aria-label={playing ? 'Pause' : 'Play'} disabled={loadingAudio}>
+        <button className="mp-play-btn" onClick={togglePlay} aria-label={playing ? 'Pause' : 'Play'} disabled={loadingAudio || !hasPreview}>
           {playing ? (
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
               <rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/>
             </svg>
           ) : (
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" opacity={(loadingAudio || !hasPreview) ? 0.5 : 1}>
               <polygon points="5,3 19,12 5,21"/>
             </svg>
           )}
@@ -231,7 +238,7 @@ function MiniPlayer({ track, onClose }) {
           </div>
           <div className="mp-times">
             <span>{Math.floor(progress)}s</span>
-            <span>{duration ? `${Math.floor(duration)}s` : '30s'}</span>
+            <span>{duration ? `${Math.floor(duration)}s` : (hasPreview ? '30s' : '')}</span>
           </div>
         </div>
       </div>
