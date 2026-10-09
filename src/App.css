@@ -1,4 +1,4 @@
-﻿/* â”€â”€â”€ Page Layout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â”€â”€â”€ Page Layout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .app-container {
   width: 100%;
   max-width: 980px;
@@ -1342,3 +1342,35 @@
   .legal-card { padding: 1.4rem 1.1rem; }
   .legal-title { font-size: 1.6rem; }
 }
+
+/* ─── Extra Mobile Optimizations (< 480px) ────────────────────────── */
+@media (max-width: 480px) {
+  .app-title { font-size: 1.65rem; }
+  .app-subtitle { font-size: 0.8rem; }
+  
+  /* Stack search form */
+  .search-form { flex-direction: column; gap: 0.75rem; }
+  .search-btn { width: 100%; justify-content: center; padding: 1rem; }
+  
+  /* Scrollable tabs */
+  .tabs { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab-btn { flex: 1 0 auto; white-space: nowrap; text-align: center; justify-content: center; }
+  
+  /* Grid Card Actions (stack vertically to prevent overflow) */
+  .tc-actions { flex-direction: column; align-items: stretch; gap: 0.35rem; }
+  .tc-isrc-badge, .tc-ig-btn { justify-content: center; height: 32px; }
+  
+  /* List Card Actions */
+  .tl-actions { gap: 0.35rem; }
+  .tl-btn { min-width: 28px; padding: 0 6px; }
+  .tl-btn.tl-ig { padding: 0 6px; }
+  
+  /* Header adjustments */
+  .app-logo-wrap { width: 64px; height: 64px; margin-bottom: 1rem; }
+  
+  /* About/How It Works */
+  .step-card { padding: 1.2rem; }
+  .about-toggle { padding: 1rem 1.2rem; font-size: 0.95rem; }
+}
+
