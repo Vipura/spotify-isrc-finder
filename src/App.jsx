@@ -749,6 +749,12 @@ export default function App() {
               placeholder="Search song, artist, or paste Spotify link..."
               value={query}
               onChange={e => setQuery(e.target.value)}
+              onFocus={e => {
+                if (window.innerWidth <= 768) {
+                  const form = e.target.closest('.search-form');
+                  setTimeout(() => form?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
+                }
+              }}
               autoComplete="off"
               spellCheck={false}
               id="searchInput"

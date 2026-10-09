@@ -4,6 +4,13 @@
   max-width: 980px;
   padding-top: 3.5rem;
   padding-bottom: 2rem;
+  position: relative;
+  z-index: 1;
+}
+
+.search-form { scroll-margin-top: 12px; }
+@media (max-width: 768px) {
+  .app-container { padding-bottom: 45vh; }
 }
 
 .app-container.has-player {
