@@ -22,7 +22,7 @@ function setSaved(tracks) {
 }
 
 // ─── Popular-tracks cache (refreshed once every 4 days) ───────────────
-const FEATURED_LS_KEY = 'isrc_featured_cache';
+const FEATURED_LS_KEY = 'isrc_featured_cache_v2';
 const FEATURED_TTL_MS = 4 * 24 * 60 * 60 * 1000;
 function readFeaturedCache() {
   try { return JSON.parse(localStorage.getItem(FEATURED_LS_KEY)); }
@@ -96,13 +96,13 @@ async function safeFetchJson(url) {
 
   const data = await res.json();
   if (!res.ok) {
-    throw new Error(data.error?.message || (typeof data.error === 'object' ? JSON.stringify(data.error) : data.error) || `Error ${res.status}`);
+    throw new Error(data.message || data.error?.message || (typeof data.error === 'object' ? JSON.stringify(data.error) : data.error) || `Error ${res.status}`);
   }
   return data;
 }
 
 // Browser-side search cache: repeated searches cost 0 API calls for 24h
-const SEARCH_LS_KEY = 'isrc_search_cache';
+const SEARCH_LS_KEY = 'isrc_search_cache_v2';
 const SEARCH_TTL_MS = 24 * 60 * 60 * 1000;
 const SEARCH_MAX_ENTRIES = 40;
 const normalizeQuery = (q) => q.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -114,13 +114,32 @@ function writeSearchCache(cache) {
   try { localStorage.setItem(SEARCH_LS_KEY, JSON.stringify(cache)); } catch { /* ignore */ }
 }
 
+// Backend track shape → the shape the UI (and previously saved tracks) use
+function toUi(t) {
+  return {
+    id: t.id,
+    name: t.title,
+    artists: t.artist,
+    album: t.album,
+    albumArt: t.artwork || null,
+    duration: t.duration,
+    isrc: t.isrc || null,
+    isrcSource: t.isrc ? t.source : null, // provider the ISRC came from
+    spotifyUrl: t.spotifyUrl || null,
+  };
+}
+
 async function apiSearch(q) {
   const key = normalizeQuery(q);
   const cache = readSearchCache();
   const hit = cache[key];
   if (hit && Date.now() - hit.t < SEARCH_TTL_MS) return hit.d;
 
-  const data = await safeFetchJson(`${BASE}/api/search?q=${encodeURIComponent(key)}`);
+  const raw = await safeFetchJson(`${BASE}/api/search?q=${encodeURIComponent(key)}`);
+  const data = {
+    tracks: (raw.tracks || []).map(toUi),
+    artists: (raw.artists || []).map(a => ({ id: a.id, name: a.name, imageUrl: a.imageUrl })),
+  };
 
   cache[key] = { t: Date.now(), d: data };
   const keys = Object.keys(cache);
@@ -133,23 +152,51 @@ async function apiSearch(q) {
   return data;
 }
 
+// Pasted Spotify link
 async function apiISRC(trackId) {
   try {
-    return await safeFetchJson(`${BASE}/api/isrc/${trackId}`);
+    const data = await safeFetchJson(`${BASE}/api/isrc/${trackId}`);
+    return toUi(data.track);
   } catch (err) {
     if (err.message.includes('404')) throw new Error('Track not found on Spotify.');
     throw err;
   }
 }
 
+const apiId = (id) => encodeURIComponent(/^(\d+|sp:.+)$/.test(String(id)) ? id : `sp:${id}`);
+
+// Resolve the ISRC of a selected track (Deezer first, Spotify only as fallback)
+async function apiTrack(id) {
+  const data = await safeFetchJson(`${BASE}/api/track/${apiId(id)}`);
+  return toUi(data.track);
+}
+
+async function apiAlternatives(id) {
+  const data = await safeFetchJson(`${BASE}/api/track/${apiId(id)}/alternatives`);
+  return (data.alternatives || []).map(toUi);
+}
+
+async function apiSpotifyCode(id) {
+  const data = await safeFetchJson(`${BASE}/api/track/${apiId(id)}/spotify`);
+  return { track: data.track ? toUi(data.track) : null, differs: Boolean(data.differs) };
+}
+
+function sendFeedback(isrc, source, result) {
+  return fetch(`${BASE}/api/feedback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ isrc, source, result }),
+  }).then(r => r.ok).catch(() => false);
+}
+
 async function apiFeatured() {
   const data = await safeFetchJson(`${BASE}/api/featured`);
-  return { tracks: data.tracks || [], expiresAt: data.expiresAt };
+  return { tracks: (data.tracks || []).map(toUi), expiresAt: data.expiresAt };
 }
 
 async function apiArtistTopTracks(id) {
   const data = await safeFetchJson(`${BASE}/api/artists/${id}/top-tracks`);
-  return data.tracks || [];
+  return (data.tracks || []).map(toUi);
 }
 
 // ─── Spotify Embed Player (bottom bar) ──────────────────────────────────
@@ -173,23 +220,21 @@ function MiniPlayer({ track, onClose }) {
       setHasPreview(false);
       let urlToPlay = null;
 
-      // Backend resolves: Deezer (by ISRC) → iTunes (verified by title/artist/duration)
+      // Backend resolves a fresh URL every play: Deezer preview first, then a strictly
+      // verified iTunes match (title + artist + duration). Nothing unverified is played.
       try {
+        const pid = /^(\d+|sp:.+)$/.test(String(track.id)) ? track.id : `sp:${track.id}`;
         const params = new URLSearchParams({
-          isrc: track.isrc || '',
           title: track.name || '',
           artist: track.artists || '',
           duration: String(track.duration || ''),
         });
-        const res = await fetch(`${BASE}/api/preview?${params}`);
+        const res = await fetch(`${BASE}/api/preview/${encodeURIComponent(pid)}?${params}`);
         const data = await res.json();
         urlToPlay = data.previewUrl || null;
       } catch (err) {
         console.error("Preview fetch error:", err);
       }
-
-      // Last resort: Spotify's own preview URL, if it has one
-      if (!urlToPlay) urlToPlay = track.previewUrl || null;
 
       if (isCancelled) return;
 
@@ -299,11 +344,156 @@ const copyToClipboard = async (text, setCopied) => {
   setTimeout(() => setCopied(false), 2000);
 };
 
+// ─── ISRC on demand (search results carry no ISRC) ────────────────────
+function useIsrc(track) {
+  const [cur, setCur] = useState({ isrc: track.isrc || null, source: track.isrcSource || 'spotify' });
+  const [status, setStatus] = useState('idle'); // idle | loading | error
+  const [error, setError] = useState('');
+
+  const getIsrc = useCallback(async () => {
+    if (status === 'loading') return;
+    setStatus('loading'); setError('');
+    try {
+      const t = await apiTrack(track.id);
+      setCur({ isrc: t.isrc, source: t.isrcSource || 'deezer' });
+      setStatus('idle');
+    } catch (err) {
+      setError(err.message || 'Please try again in a moment.');
+      setStatus('error');
+    }
+  }, [track.id, status]);
+
+  const setCode = useCallback((isrc, source) => setCur({ isrc, source }), []);
+  return {
+    isrc: cur.isrc, source: cur.source, status, error, getIsrc, setCode,
+    track: cur.isrc ? { ...track, isrc: cur.isrc, isrcSource: cur.source } : track,
+  };
+}
+
+function CopyChip({ text, label }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button type="button" className={`isrc-chip ${done ? 'copied' : ''}`} onClick={() => copyToClipboard(text, setDone)} title="Copy ISRC">
+      {done ? '\u2713 Copied' : (label || text)}
+    </button>
+  );
+}
+
+const FB_KEY = 'isrc_feedback_given';
+const readFb = () => { try { return JSON.parse(localStorage.getItem(FB_KEY)) || {}; } catch { return {}; } };
+const fmtDur = (ms) => ms ? `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}` : '';
+const srcLabel = (s) => (s === 'spotify' ? 'Spotify' : 'Deezer');
+
+function IsrcExtras({ track, code }) {
+  const [open, setOpen] = useState(false);
+  const [alts, setAlts] = useState(null);
+  const [altsState, setAltsState] = useState('idle');
+  const [altCodes, setAltCodes] = useState({});
+  const [sp, setSp] = useState(null);
+  const [spState, setSpState] = useState('idle');
+  const [msg, setMsg] = useState('');
+  const [fbMap, setFbMap] = useState(readFb);
+  const given = fbMap[code.isrc];
+
+  const sendFb = async (result) => {
+    const next = { ...fbMap, [code.isrc]: result };
+    setFbMap(next);
+    try { localStorage.setItem(FB_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+    sendFeedback(code.isrc, code.source, result);
+  };
+
+  const loadAlts = async () => {
+    setAltsState('loading'); setMsg('');
+    try { setAlts(await apiAlternatives(track.id)); setAltsState('idle'); }
+    catch (e) { setMsg(e.message); setAltsState('error'); }
+  };
+  const loadAltCode = async (alt) => {
+    setAltCodes(m => ({ ...m, [alt.id]: { status: 'loading' } }));
+    try {
+      const t = await apiTrack(alt.id);
+      setAltCodes(m => ({ ...m, [alt.id]: { status: 'ok', isrc: t.isrc, source: t.isrcSource || 'deezer' } }));
+    } catch (e) {
+      setAltCodes(m => ({ ...m, [alt.id]: { status: 'error', error: e.message } }));
+    }
+  };
+  const loadSpotify = async () => {
+    setSpState('loading'); setMsg('');
+    try { setSp(await apiSpotifyCode(track.id)); setSpState('idle'); }
+    catch (e) { setMsg(e.message); setSpState('error'); }
+  };
+
+  return (
+    <div className="isrc-extra">
+      <div className="isrc-extra-row">
+        <span className="isrc-src">via {srcLabel(code.source)}</span>
+        <button type="button" className="isrc-link" onClick={() => setOpen(o => !o)} aria-expanded={open}>Try another code</button>
+        {given ? (
+          <span className="fb-thanks">{given === 'worked' ? '\u2713 Thanks \u2014 glad it worked' : 'Thanks for the feedback'}</span>
+        ) : (
+          <span className="fb-group">
+            <button type="button" className="fb-btn fb-yes" onClick={() => sendFb('worked')}>Worked on Instagram</button>
+            <button type="button" className="fb-btn fb-no" onClick={() => sendFb('failed')}>Didn't work</button>
+          </span>
+        )}
+      </div>
+
+      {open && (
+        <div className="isrc-more">
+          <div className="isrc-more-actions">
+            <button type="button" className="isrc-more-btn" onClick={loadAlts} disabled={altsState === 'loading' || alts !== null}>
+              {altsState === 'loading' ? 'Loading\u2026' : 'Other versions'}
+            </button>
+            {code.source !== 'spotify' && (
+              <button type="button" className="isrc-more-btn" onClick={loadSpotify} disabled={spState === 'loading' || sp !== null}>
+                {spState === 'loading' ? 'Loading\u2026' : "Spotify's code"}
+              </button>
+            )}
+          </div>
+          {msg && <div className="isrc-note">{msg}</div>}
+
+          {sp && (sp.track && sp.differs ? (
+            <div className="isrc-alt">
+              <div className="isrc-alt-info"><strong>Spotify's code</strong></div>
+              <CopyChip text={sp.track.isrc} />
+              <button type="button" className="isrc-link" onClick={() => code.setCode(sp.track.isrc, 'spotify')}>Use this</button>
+            </div>
+          ) : (
+            <div className="isrc-note">{sp.track ? 'Spotify has the same code.' : 'Spotify has no different code for this track.'}</div>
+          ))}
+
+          {alts && alts.length === 0 && <div className="isrc-note">No other versions found.</div>}
+          {alts && alts.map(alt => {
+            const c = altCodes[alt.id];
+            return (
+              <div className="isrc-alt" key={alt.id}>
+                <div className="isrc-alt-info">
+                  <span className="isrc-alt-album">{alt.album || 'Single'}</span>
+                  <span className="isrc-alt-dur">{fmtDur(alt.duration)}</span>
+                </div>
+                {c?.status === 'ok' ? (
+                  <>
+                    <CopyChip text={c.isrc} />
+                    {c.isrc !== code.isrc && <button type="button" className="isrc-link" onClick={() => code.setCode(c.isrc, c.source)}>Use this</button>}
+                  </>
+                ) : (
+                  <button type="button" className="isrc-more-btn" onClick={() => loadAltCode(alt)} disabled={c?.status === 'loading'}>
+                    {c?.status === 'loading' ? '\u2026' : (c?.status === 'error' ? 'Retry' : 'Get code')}
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Track Grid Card (Vertical - for Popular on Spotify) ──────────────
 function TrackGridCard({ track, onPlay, onSave, isSaved }) {
   const [copied, setCopied] = useState(false);
   const [igCopied, setIgCopied] = useState(false);
-  const [noPreviewMsg, setNoPreviewMsg] = useState(false);
+  const code = useIsrc(track);
 
   const handlePlay = () => {
     onPlay(track); // Spotify embed always works - no preview URL needed
@@ -329,28 +519,36 @@ function TrackGridCard({ track, onPlay, onSave, isSaved }) {
             <div className="tc-name" title={track.name}>{track.name}</div>
             <div className="tc-artist" title={track.artists}>{track.artists}</div>
           </div>
-          <button className={`tc-save-icon ${isSaved ? 'saved' : ''}`} onClick={() => onSave(track)} title={isSaved ? 'Remove from saved' : 'Save track'}>
+          <button className={`tc-save-icon ${isSaved ? 'saved' : ''}`} onClick={() => onSave(code.track)} title={isSaved ? 'Remove from saved' : 'Save track'}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill={isSaved ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
             </svg>
           </button>
         </div>
 
-        {track.isrc && (
+        {code.isrc ? (
           <div className="tc-actions">
-            <div className={`tc-isrc-badge ${copied ? 'copied' : ''}`} onClick={() => copyToClipboard(track.isrc, setCopied)} title="Copy ISRC">
+            <div className={`tc-isrc-badge ${copied ? 'copied' : ''}`} onClick={() => copyToClipboard(code.isrc, setCopied)} title="Copy ISRC">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 {copied ? <polyline points="20 6 9 17 4 12"/> : <><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></>}
               </svg>
-              <span>{track.isrc}</span>
+              <span>{code.isrc}</span>
             </div>
             
-            <button className={`tc-ig-btn ${igCopied ? 'copied' : ''}`} onClick={() => copyToClipboard(`isrc:${track.isrc}`, setIgCopied)} title="Copy ISRC for Instagram">
+            <button className={`tc-ig-btn ${igCopied ? 'copied' : ''}`} onClick={() => copyToClipboard(`isrc:${code.isrc}`, setIgCopied)} title="Copy ISRC for Instagram">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>
               <span>{igCopied ? '\u2713' : 'for IG'}</span>
             </button>
           </div>
+        ) : (
+          <div className="tc-actions">
+            <button type="button" className="get-isrc-btn" onClick={code.getIsrc} disabled={code.status === 'loading'}>
+              {code.status === 'loading' ? 'Getting\u2026' : (code.status === 'error' ? 'Retry' : 'Get ISRC')}
+            </button>
+          </div>
         )}
+        {code.status === 'error' && <div className="isrc-note">{code.error}</div>}
+        {code.isrc && <IsrcExtras track={track} code={code} />}
       </div>
     </div>
   );
@@ -360,6 +558,7 @@ function TrackGridCard({ track, onPlay, onSave, isSaved }) {
 function TrackListCard({ track, onPlay, onSave, isSaved }) {
   const [copied, setCopied] = useState(false);
   const [igCopied, setIgCopied] = useState(false);
+  const code = useIsrc(track);
 
   return (
     <div className="track-list-card glass-list-card">
@@ -379,27 +578,33 @@ function TrackListCard({ track, onPlay, onSave, isSaved }) {
       </div>
 
       <div className="tl-actions">
-        {track.isrc && (
+        {code.isrc ? (
           <>
-            <div className={`tl-isrc-badge ${copied ? 'copied' : ''}`} onClick={() => copyToClipboard(track.isrc, setCopied)} title="Copy ISRC">
+            <div className={`tl-isrc-badge ${copied ? 'copied' : ''}`} onClick={() => copyToClipboard(code.isrc, setCopied)} title="Copy ISRC">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 {copied ? <polyline points="20 6 9 17 4 12"/> : <><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></>}
               </svg>
-              <span>{track.isrc}</span>
+              <span>{code.isrc}</span>
             </div>
             
-            <button className={`tl-btn tl-ig ${igCopied ? 'copied' : ''}`} onClick={() => copyToClipboard(`isrc:${track.isrc}`, setIgCopied)} title="Copy ISRC for Instagram">
+            <button className={`tl-btn tl-ig ${igCopied ? 'copied' : ''}`} onClick={() => copyToClipboard(`isrc:${code.isrc}`, setIgCopied)} title="Copy ISRC for Instagram">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>
               <span className="tl-ig-label">{igCopied ? '\u2713' : 'for IG'}</span>
             </button>
           </>
+        ) : (
+          <button type="button" className="get-isrc-btn" onClick={code.getIsrc} disabled={code.status === 'loading'}>
+            {code.status === 'loading' ? 'Getting\u2026' : (code.status === 'error' ? 'Retry' : 'Get ISRC')}
+          </button>
         )}
-        <button className={`tl-btn tl-save ${isSaved ? 'saved' : ''}`} onClick={() => onSave(track)} title={isSaved ? 'Remove from saved' : 'Save track'}>
+        <button className={`tl-btn tl-save ${isSaved ? 'saved' : ''}`} onClick={() => onSave(code.track)} title={isSaved ? 'Remove from saved' : 'Save track'}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill={isSaved ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
           </svg>
         </button>
       </div>
+      {code.status === 'error' && <div className="tl-extra isrc-note">{code.error}</div>}
+      {code.isrc && <div className="tl-extra"><IsrcExtras track={track} code={code} /></div>}
     </div>
   );
 }
@@ -560,6 +765,9 @@ function LegalPage({ type, onBack }) {
 // ─── Main App ─────────────────────────────────────────────────────────
 export default function App() {
   const [query, setQuery]           = useState('');
+  const debouncedQuery              = useDebounce(query, 500); // live search delay
+  const lastQueryRef                = useRef('');
+  const searchReqRef                = useRef(0);
   
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState('');
@@ -643,21 +851,33 @@ export default function App() {
   // Clearing the input restores the Popular section (no API call)
   useEffect(() => {
     if (query.trim()) return;
+    lastQueryRef.current = '';
     setSearchResults(null);
     setSearchArtists([]);
     setError('');
     setArtistTopTracks(null);
   }, [query]);
 
-  // Search only runs when the user presses Enter or taps Search
+  // Live search: after a 500ms pause, only with 3+ characters (cached results cost nothing)
+  useEffect(() => {
+    const q = debouncedQuery.trim();
+    if (q.length < 3) return;
+    if (normalizeQuery(q) === lastQueryRef.current) return;
+    setArtistTopTracks(null);
+    performSearch(q);
+  }, [debouncedQuery]);
+
+  // Enter / Search button searches immediately (skipped if that exact query already ran)
   const submitSearch = () => {
     const q = query.trim();
-    if (!q || loading) return;
+    if (q.length < 3 || normalizeQuery(q) === lastQueryRef.current) return;
     setArtistTopTracks(null);
     performSearch(q);
   };
 
   const performSearch = async (searchStr) => {
+    const reqId = ++searchReqRef.current;
+    lastQueryRef.current = normalizeQuery(searchStr);
     setError('');
     setLoading(true);
     setActiveTab('home');
@@ -666,31 +886,24 @@ export default function App() {
       if (isSpotifyUrl(searchStr)) {
         const trackId = extractTrackId(searchStr);
         if (!trackId) throw new Error('Could not extract track ID from the Spotify URL.');
-        const data = await apiISRC(trackId);
-        const track = {
-          id: data.id,
-          name: data.name,
-          artists: data.artists?.map(a => a.name).join(', '),
-          album: data.album?.name,
-          albumArt: data.album?.images?.[1]?.url || data.album?.images?.[0]?.url || null,
-          previewUrl: data.preview_url,
-          isrc: data.external_ids?.isrc || null,
-          duration: data.duration_ms,
-          spotifyUrl: data.external_urls?.spotify,
-        };
+        const track = await apiISRC(trackId);
+        if (reqId !== searchReqRef.current) return;
         setSearchResults([track]);
         setSearchArtists([]);
       } else {
         const { tracks, artists } = await apiSearch(searchStr);
+        if (reqId !== searchReqRef.current) return;
         setSearchResults(tracks);
         setSearchArtists(artists || []);
         if (tracks.length === 0 && artists.length === 0) setError('No results found. Try a different search term.');
       }
     } catch (err) {
+      if (reqId !== searchReqRef.current) return;
+      lastQueryRef.current = ''; // allow retrying the same query
       setError(err.message || 'An unexpected error occurred.');
       setSearchResults([]);
     } finally {
-      setLoading(false);
+      if (reqId === searchReqRef.current) setLoading(false);
     }
   };
 
@@ -698,6 +911,7 @@ export default function App() {
     setError('');
     setLoading(true);
     setSearchArtists([]); // hide suggestions
+    lastQueryRef.current = '';
     try {
       const tracks = await apiArtistTopTracks(artist.id);
       setArtistTopTracks({ artistName: artist.name, tracks });
@@ -809,7 +1023,7 @@ export default function App() {
               </button>
             )}
           </div>
-          <button type="button" className="search-btn" onClick={submitSearch} disabled={loading || !query.trim()}>
+          <button type="button" className="search-btn" onClick={submitSearch} disabled={loading || query.trim().length < 3}>
             {loading ? <span className="spinner" /> : <><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Search</>}
           </button>
         </div>

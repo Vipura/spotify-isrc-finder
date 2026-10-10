@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "server": "node server.js",
+    "test": "node --test \"test/*.test.js\"",
     "start": "node server.js & vite",
     "build": "vite build",
     "lint": "oxlint",
