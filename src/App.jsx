@@ -792,7 +792,7 @@ function ArtistPage({ artistId, initialData, onBack, onPlay, toggleSave, isSaved
         setTracksLoading(true);
         const nameParam = artist?.name || initialData?.name ? `?name=${encodeURIComponent(artist?.name || initialData?.name)}` : '';
         const raw = await safeFetchJson(`${BASE}/api/artists/${artistId}/top-tracks${nameParam}`);
-        if (active) setTracks(raw.tracks || []);
+        if (active) setTracks((raw.tracks || []).map(toUi));
       } catch (err) {
         if (active) setError(e => e || 'Failed to load top tracks.');
       } finally {
@@ -809,8 +809,8 @@ function ArtistPage({ artistId, initialData, onBack, onPlay, toggleSave, isSaved
 
   return (
     <div className="artist-page content-section">
-      <button className="back-button" onClick={onBack} style={{background: 'none', border: 'none', color: '#fff', cursor: 'pointer', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '5px', padding: 0}}>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+      <button className="get-isrc-btn" onClick={onBack} style={{marginBottom: '20px', display: 'inline-flex', alignItems: 'center', gap: '5px', width: 'auto', padding: '8px 16px', fontSize: '0.9rem'}}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
         Back
       </button>
       
@@ -1085,60 +1085,6 @@ export default function App() {
           <p className="app-subtitle">Search by song, artist, or Spotify link — preview, copy &amp; save</p>
         </header>
 
-        {/* Search bar */}
-        <div className="search-form" onSubmit={e => e.preventDefault()}>
-          <div className="search-input-wrap">
-            <input
-              ref={searchRef}
-              className="search-input"
-              type="text"
-              placeholder="Search song, artist, or paste Spotify link..."
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); submitSearch(); } }}
-              enterKeyHint="search"
-              onFocus={e => {
-                if (window.innerWidth <= 768) {
-                  const form = e.target.closest('.search-form');
-                  setTimeout(() => form?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
-                }
-              }}
-              autoComplete="off"
-              spellCheck={false}
-              id="searchInput"
-            />
-            {query && (
-              <button type="button" className="search-clear" onClick={clearSearch} aria-label="Clear">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-              </button>
-            )}
-          </div>
-          <button type="button" className="search-btn" onClick={submitSearch} disabled={loading || query.trim().length < 3}>
-            {loading ? <span className="spinner" /> : <><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Search</>}
-          </button>
-        </div>
-
-        {/* Error banner */}
-        {error && (
-          <div className="error-banner">
-            <span className="error-icon">⚠</span>
-            <span className="error-text">{error}</span>
-          </div>
-        )}
-
-        {/* Tabs */}
-        <div className="tabs">
-          <button className={`tab-btn ${activeTab === 'home' ? 'active' : ''}`} onClick={() => setActiveTab('home')}>
-            Popular on Spotify
-          </button>
-          <button className={`tab-btn ${activeTab === 'saved' ? 'active' : ''}`} onClick={() => setActiveTab('saved')}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill={saved.length ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: '5px', verticalAlign: 'middle'}}>
-              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-            </svg>
-            Saved ({saved.length})
-          </button>
-        </div>
-
         {/* Dynamic Content Section */}
         {routeHash.startsWith('#/artist/') ? (
           <ArtistPage 
@@ -1150,9 +1096,64 @@ export default function App() {
             isSaved={isSaved} 
           />
         ) : (
-        <div className="content-section">
-          
-          {/* Artist Suggestions (Only show when searching and artists found) */}
+          <>
+            {/* Search bar */}
+            <div className="search-form" onSubmit={e => e.preventDefault()}>
+              <div className="search-input-wrap">
+                <input
+                  ref={searchRef}
+                  className="search-input"
+                  type="text"
+                  placeholder="Search song, artist, or paste Spotify link..."
+                  value={query}
+                  onChange={e => setQuery(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); submitSearch(); } }}
+                  enterKeyHint="search"
+                  onFocus={e => {
+                    if (window.innerWidth <= 768) {
+                      const form = e.target.closest('.search-form');
+                      setTimeout(() => form?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
+                    }
+                  }}
+                  autoComplete="off"
+                  spellCheck={false}
+                  id="searchInput"
+                />
+                {query && (
+                  <button type="button" className="search-clear" onClick={clearSearch} aria-label="Clear">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                )}
+              </div>
+              <button type="button" className="search-btn" onClick={submitSearch} disabled={loading || query.trim().length < 3}>
+                {loading ? <span className="spinner" /> : <><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Search</>}
+              </button>
+            </div>
+
+            {/* Error banner */}
+            {error && (
+              <div className="error-banner">
+                <span className="error-icon">⚠</span>
+                <span className="error-text">{error}</span>
+              </div>
+            )}
+
+            {/* Tabs */}
+            <div className="tabs">
+              <button className={`tab-btn ${activeTab === 'home' ? 'active' : ''}`} onClick={() => setActiveTab('home')}>
+                Popular on Spotify
+              </button>
+              <button className={`tab-btn ${activeTab === 'saved' ? 'active' : ''}`} onClick={() => setActiveTab('saved')}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill={saved.length ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: '5px', verticalAlign: 'middle'}}>
+                  <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                </svg>
+                Saved ({saved.length})
+              </button>
+            </div>
+
+            <div className="content-section">
+              
+              {/* Artist Suggestions (Only show when searching and artists found) */}
           {activeTab === 'home' && searchArtists.length > 0 && (
             <div className="suggestions-section">
               <div className="section-header">
@@ -1227,6 +1228,7 @@ export default function App() {
             </div>
           )}
         </div>
+          </>
         )}
 
         <AboutSection />
