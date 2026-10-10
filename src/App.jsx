@@ -831,7 +831,6 @@ function ArtistPage({ artistId, initialData, onBack, onPlay, toggleSave, isSaved
           )}
           <div>
             <h2 style={{margin: '0 0 5px 0', fontSize: '2rem'}}>{artist.name}</h2>
-            {artist.nb_fan > 0 && <p style={{margin: 0, opacity: 0.7}}>{artist.nb_fan.toLocaleString()} fans</p>}
           </div>
         </div>
       )}

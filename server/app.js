@@ -126,7 +126,7 @@ export function createApp({ fetchFn, clientId, clientSecret, store = createStore
         }
 
         const dResults = await Promise.all(dPromises);
-        const artistProm = deezer.artistSearch(queryInfo.cleaned, 10).catch(() => []);
+        const artistProm = deezer.artistSearch(q, 10).catch(() => []);
 
         const trackMap = new Map();
         dResults.flat().forEach(t => {
@@ -198,7 +198,24 @@ export function createApp({ fetchFn, clientId, clientSecret, store = createStore
         rememberMeta(dzItems);
 
         const rawArtists = await artistProm;
-        const scoredArtists = rawArtists.map(a => {
+        
+        // Extract artists from matched tracks to handle fuzzy artist names (like "anne marie" -> "Anne-Marie")
+        const trackArtists = new Map();
+        items.forEach(t => {
+          if (t.artistId && !trackArtists.has(t.artistId) && !t.artistId.startsWith('sp:')) {
+            trackArtists.set(t.artistId, { id: t.artistId, name: t.mainArtist, imageUrl: t.artistImage, nb_fan: 0 });
+          }
+        });
+        
+        // Combine explicitly searched artists with those extracted from tracks
+        const combinedArtists = [...rawArtists];
+        for (const [id, a] of trackArtists) {
+          if (!combinedArtists.some(ra => String(ra.id) === id)) {
+            combinedArtists.push(a);
+          }
+        }
+
+        const scoredArtists = combinedArtists.map(a => {
            let sim = jaroWinkler(cleanQuery(a.name), queryInfo.cleaned);
            if (queryInfo.splits.length > 0) {
               const artistSim = Math.max(...queryInfo.splits.map(s => jaroWinkler(cleanQuery(a.name), s.artist)));
