@@ -84,8 +84,9 @@ export function createProviders({ fetchFn, stats, clientId, clientSecret, now = 
   });
 
   const deezer = {
-    async search(q, limit = 8) {
-      const d = await deezerGet(`/search?q=${encodeURIComponent(q)}&limit=${limit}`, 'search');
+    async search(q, limit = 8, strict = false) {
+      const strictParam = strict ? '&strict=on' : '';
+      const d = await deezerGet(`/search?q=${encodeURIComponent(q)}${strictParam}&limit=${limit}`, 'search');
       return (d?.data || []).filter((t) => t && t.id).map(mapDeezer);
     },
     /** Full track (includes ISRC + preview). Returns null if not found. */

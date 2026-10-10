@@ -3,7 +3,7 @@ import cors from 'cors';
 import { createProviders } from './lib/providers.js';
 import { createStore } from './lib/cache.js';
 import { Stats, isProviderDown } from './lib/resilience.js';
-import { normalizeIsrc, norm } from './lib/isrc.js';
+import { normalizeIsrc, norm, scoreTrack, parseQuery } from './lib/isrc.js';
 
 const DAY = 24 * 60 * 60 * 1000;
 const TTL = {
@@ -73,9 +73,10 @@ export function createApp({ fetchFn, clientId, clientSecret, store = createStore
   // ─── GET /api/search?q= ───────────────────────────────────────────────
   app.get('/api/search', route(async (req, res) => {
     const q = String(req.query.q || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    const forceSpotify = req.query.forceSpotify === 'true';
     if (q.length < 3) return res.status(400).json({ error: 'too_short', message: 'Type at least 3 characters.' });
 
-    const key = `search:${q}`;
+    const key = forceSpotify ? `search:sp:${q}` : `search:${q}`;
     const hit = cache.get(key);
     if (hit) { cacheHit('search'); return res.json({ ...hit, source: 'cache' }); }
 
@@ -84,34 +85,90 @@ export function createApp({ fetchFn, clientId, clientSecret, store = createStore
     let spotifyDown = false;
     let ttl = TTL.search;
 
-    try {
-      const items = await deezer.search(q, 8);
-      if (items.length) {
-        rememberMeta(items);
-        const seen = new Set();
-        const artists = [];
-        for (const t of items) {
-          if (!t.artistId || seen.has(t.artistId)) continue;
-          seen.add(t.artistId);
-          artists.push({ id: t.artistId, name: t.artist, imageUrl: t.artistImage });
-          if (artists.length === 5) break;
-        }
-        result = {
-          tracks: items.map((t) => toPublic({ ...t, isrc: null, source: 'deezer' })), // search results carry no ISRC
-          artists,
-          source: 'deezer',
-        };
-      }
-    } catch (e) { if (!isProviderDown(e)) throw e; deezerDown = true; }
+    const queryInfo = parseQuery(q);
 
-    if (!result) {
-      // Automatic Spotify fallback: Deezer found nothing or is unavailable
+    if (forceSpotify) {
       try {
-        const items = (await spotify.search(q, 5)).filter((t) => t.isrc);
+        const items = (await spotify.search(q, 10)).filter((t) => t.isrc);
         items.forEach((t) => { rememberTrack(toRecord(t, 'spotify')); rememberMeta(t.id ? [t] : []); });
         result = { tracks: items.map((t) => toPublic({ ...t, source: 'spotify' })), artists: [], source: 'spotify' };
-        ttl = deezerDown ? TTL.searchFallback : (items.length ? TTL.search : 60 * 60_000);
       } catch (e) { if (!isProviderDown(e)) throw e; spotifyDown = true; }
+    } else {
+      try {
+        const dPromises = [];
+        if (queryInfo.splits.length > 0) {
+          const split = queryInfo.splits[0];
+          dPromises.push(deezer.search(`artist:"${split.artist}" track:"${split.title}"`, 25, true));
+        } else {
+          dPromises.push(Promise.resolve([]));
+        }
+        
+        dPromises.push(deezer.search(queryInfo.cleaned, 50, true));
+        dPromises.push(deezer.search(queryInfo.cleaned, 50, false));
+
+        const [resA, resB, resC] = await Promise.all(dPromises);
+
+        const trackMap = new Map();
+        [...resA, ...resB, ...resC].forEach(t => {
+          if (!trackMap.has(t.id)) trackMap.set(t.id, t);
+        });
+
+        let items = Array.from(trackMap.values());
+
+        if (items.length > 0) {
+          const scored = items.map(t => ({ track: t, score: scoreTrack(t, queryInfo) }));
+          scored.sort((a, b) => b.score - a.score);
+          
+          let bestScore = scored[0].score;
+
+          if (bestScore < 0.6) {
+            try {
+              const spItems = (await spotify.search(q, 10)).filter(t => t.isrc);
+              const scoredSp = spItems.map(t => ({ track: { ...t, source: 'spotify' }, score: scoreTrack(t, queryInfo) }));
+              scored.push(...scoredSp);
+              scored.sort((a, b) => b.score - a.score);
+            } catch (e) { if (!isProviderDown(e)) throw e; }
+          }
+          
+          items = scored.map(s => s.track);
+
+          const finalTracks = items.map(t => {
+            const isSp = t.source === 'spotify';
+            if (isSp) {
+              const rec = toRecord(t, 'spotify');
+              rememberTrack(rec);
+              rememberMeta(t.id ? [t] : []);
+              return toPublic({ ...t, source: 'spotify' });
+            } else {
+              return toPublic({ ...t, isrc: null, source: 'deezer' });
+            }
+          });
+
+          const dzItems = items.filter(t => t.source !== 'spotify');
+          rememberMeta(dzItems);
+
+          const seen = new Set();
+          const artists = [];
+          for (const t of dzItems) {
+            if (!t.artistId || seen.has(t.artistId)) continue;
+            seen.add(t.artistId);
+            artists.push({ id: t.artistId, name: t.artist, imageUrl: t.artistImage });
+            if (artists.length === 5) break;
+          }
+
+          const hasSpotify = items.some(t => t.source === 'spotify');
+          result = { tracks: finalTracks, artists, source: hasSpotify ? 'mixed' : 'deezer' };
+        }
+      } catch (e) { if (!isProviderDown(e)) throw e; deezerDown = true; }
+
+      if (!result) {
+        try {
+          const items = (await spotify.search(q, 10)).filter((t) => t.isrc);
+          items.forEach((t) => { rememberTrack(toRecord(t, 'spotify')); rememberMeta(t.id ? [t] : []); });
+          result = { tracks: items.map((t) => toPublic({ ...t, source: 'spotify' })), artists: [], source: 'spotify' };
+          ttl = deezerDown ? TTL.searchFallback : (items.length ? TTL.search : 60 * 60_000);
+        } catch (e) { if (!isProviderDown(e)) throw e; spotifyDown = true; }
+      }
     }
 
     if (!result) {

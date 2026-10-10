@@ -129,13 +129,14 @@ function toUi(t) {
   };
 }
 
-async function apiSearch(q) {
-  const key = normalizeQuery(q);
+async function apiSearch(q, forceSpotify = false) {
+  const key = forceSpotify ? `sp:${normalizeQuery(q)}` : normalizeQuery(q);
   const cache = readSearchCache();
   const hit = cache[key];
   if (hit && Date.now() - hit.t < SEARCH_TTL_MS) return hit.d;
 
-  const raw = await safeFetchJson(`${BASE}/api/search?q=${encodeURIComponent(key)}`);
+  const url = forceSpotify ? `${BASE}/api/search?q=${encodeURIComponent(key)}&forceSpotify=true` : `${BASE}/api/search?q=${encodeURIComponent(key)}`;
+  const raw = await safeFetchJson(url);
   const data = {
     tracks: (raw.tracks || []).map(toUi),
     artists: (raw.artists || []).map(a => ({ id: a.id, name: a.name, imageUrl: a.imageUrl })),
@@ -775,6 +776,7 @@ export default function App() {
   
   const [searchResults, setSearchResults] = useState(null); // null means not searched
   const [searchArtists, setSearchArtists] = useState([]);
+  const [visibleCount, setVisibleCount] = useState(10);
   
   const [artistTopTracks, setArtistTopTracks] = useState(null); // { artistName, tracks }
   
@@ -857,6 +859,7 @@ export default function App() {
     setSearchArtists([]);
     setError('');
     setArtistTopTracks(null);
+    setVisibleCount(10);
   }, [query]);
 
   // Live search: after a 500ms pause, only with 3+ characters (cached results cost nothing)
@@ -876,12 +879,13 @@ export default function App() {
     performSearch(q);
   };
 
-  const performSearch = async (searchStr) => {
+  const performSearch = async (searchStr, forceSpotify = false) => {
     const reqId = ++searchReqRef.current;
     lastQueryRef.current = normalizeQuery(searchStr);
     setError('');
     setLoading(true);
     setActiveTab('home');
+    setVisibleCount(10);
 
     try {
       if (isSpotifyUrl(searchStr)) {
@@ -892,11 +896,11 @@ export default function App() {
         setSearchResults([track]);
         setSearchArtists([]);
       } else {
-        const { tracks, artists } = await apiSearch(searchStr);
+        const { tracks, artists } = await apiSearch(searchStr, forceSpotify);
         if (reqId !== searchReqRef.current) return;
-        setSearchResults(tracks);
-        setSearchArtists(artists || []);
-        if (tracks.length === 0 && artists.length === 0) setError('No results found. Try a different search term.');
+        setSearchResults(forceSpotify ? [...(searchResults || []), ...tracks] : tracks);
+        if (!forceSpotify) setSearchArtists(artists || []);
+        if (tracks.length === 0 && artists.length === 0 && !forceSpotify) setError('No results found. Try a different search term.');
       }
     } catch (err) {
       if (reqId !== searchReqRef.current) return;
@@ -948,6 +952,11 @@ export default function App() {
     contentLayout = 'featured';
     displayTracks = featured;
     headingText = 'Popular on Spotify';
+  }
+
+  const totalTracks = displayTracks.length;
+  if (contentLayout === 'results') {
+    displayTracks = displayTracks.slice(0, visibleCount);
   }
 
   return (
@@ -1108,6 +1117,18 @@ export default function App() {
                   return <TrackListCard key={track.id} track={track} onPlay={setNowPlaying} onSave={toggleSave} isSaved={isSaved(track.id)} />;
                 }
               })}
+            </div>
+          )}
+
+          {/* Pagination & Fallback Buttons */}
+          {contentLayout === 'results' && (
+            <div className="search-actions" style={{ display: 'flex', flexDirection: 'column', gap: '15px', alignItems: 'center', marginTop: '30px', marginBottom: '20px' }}>
+              {totalTracks > visibleCount && (
+                <button className="install-btn" style={{ background: 'rgba(255,255,255,0.1)', color: '#fff' }} onClick={() => setVisibleCount(v => v + 10)}>Load more</button>
+              )}
+              {activeTab === 'home' && !artistTopTracks && (
+                <button className="install-btn" style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.2)', color: '#fff' }} onClick={() => performSearch(query, true)}>Not here? Search on Spotify</button>
+              )}
             </div>
           )}
         </div>
