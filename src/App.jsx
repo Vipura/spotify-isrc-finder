@@ -139,7 +139,7 @@ async function apiSearch(q, forceSpotify = false) {
   const raw = await safeFetchJson(url);
   const data = {
     tracks: (raw.tracks || []).map(toUi),
-    artists: (raw.artists || []).map(a => ({ id: a.id, name: a.name, imageUrl: a.imageUrl })),
+    artists: (raw.artists || []).map(a => ({ id: a.id, name: a.name, imageUrl: a.imageUrl, nb_fan: a.nb_fan })),
   };
 
   cache[key] = { t: Date.now(), d: data };
@@ -764,6 +764,97 @@ function LegalPage({ type, onBack }) {
   );
 }
 
+function ArtistPage({ artistId, initialData, onBack, onPlay, toggleSave, isSaved }) {
+  const [artist, setArtist] = useState(initialData);
+  const [tracks, setTracks] = useState([]);
+  const [loading, setLoading] = useState(!initialData);
+  const [tracksLoading, setTracksLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    const fetchArtist = async () => {
+      try {
+        if (!initialData) {
+          setLoading(true);
+          const raw = await safeFetchJson(`${BASE}/api/artists/${artistId}`);
+          if (active) setArtist(raw);
+        }
+      } catch (err) {
+        if (active) setError('Failed to load artist details.');
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    
+    const fetchTracks = async () => {
+      try {
+        setTracksLoading(true);
+        const nameParam = artist?.name || initialData?.name ? `?name=${encodeURIComponent(artist?.name || initialData?.name)}` : '';
+        const raw = await safeFetchJson(`${BASE}/api/artists/${artistId}/top-tracks${nameParam}`);
+        if (active) setTracks(raw.tracks || []);
+      } catch (err) {
+        if (active) setError(e => e || 'Failed to load top tracks.');
+      } finally {
+        if (active) setTracksLoading(false);
+      }
+    };
+
+    fetchArtist().then(() => fetchTracks());
+
+    return () => { active = false; };
+  }, [artistId, initialData, artist?.name]);
+  
+  if (error) return <div className="empty-state"><p>{error}</p><button className="install-btn" onClick={onBack} style={{marginTop:'10px'}}>Go Back</button></div>;
+
+  return (
+    <div className="artist-page content-section">
+      <button className="back-button" onClick={onBack} style={{background: 'none', border: 'none', color: '#fff', cursor: 'pointer', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '5px', padding: 0}}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        Back
+      </button>
+      
+      {loading ? (
+        <div style={{display: 'flex', alignItems: 'center', gap: '20px', marginBottom: '30px'}}>
+           <div className="skeleton-card" style={{width: '120px', height: '120px', borderRadius: '50%'}}></div>
+           <div style={{flex: 1}}>
+             <div className="skeleton-card" style={{height: '30px', width: '200px', marginBottom: '10px'}}></div>
+             <div className="skeleton-card" style={{height: '20px', width: '100px'}}></div>
+           </div>
+        </div>
+      ) : artist && (
+        <div className="artist-header" style={{display: 'flex', alignItems: 'center', gap: '20px', marginBottom: '30px'}}>
+          {artist.imageUrl ? (
+            <img src={artist.imageUrl} alt={artist.name} style={{width: '120px', height: '120px', borderRadius: '50%', objectFit: 'cover', background: '#333'}} />
+          ) : (
+            <div style={{width: '120px', height: '120px', borderRadius: '50%', background: '#444', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '40px', color: '#fff'}}>{artist.name.charAt(0).toUpperCase()}</div>
+          )}
+          <div>
+            <h2 style={{margin: '0 0 5px 0', fontSize: '2rem'}}>{artist.name}</h2>
+            {artist.nb_fan > 0 && <p style={{margin: 0, opacity: 0.7}}>{artist.nb_fan.toLocaleString()} fans</p>}
+          </div>
+        </div>
+      )}
+
+      <div className="section-header"><h3 style={{margin:0}}>Top songs</h3></div>
+      
+      {tracksLoading ? (
+        <div className="tracks-list" style={{marginTop:'15px'}}>
+          {Array.from({length: 5}).map((_, i) => <div key={i} className="skeleton-card" style={{height: '70px', marginBottom: '10px'}} />)}
+        </div>
+      ) : tracks.length > 0 ? (
+        <div className="tracks-list" style={{marginTop:'15px'}}>
+          {tracks.map(track => (
+            <TrackListCard key={track.id} track={track} onPlay={onPlay} onSave={toggleSave} isSaved={isSaved(track.id)} />
+          ))}
+        </div>
+      ) : (
+        <div className="empty-state"><p>No top songs found.</p></div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main App ─────────────────────────────────────────────────────────
 export default function App() {
   const [query, setQuery]           = useState('');
@@ -778,8 +869,6 @@ export default function App() {
   const [searchArtists, setSearchArtists] = useState([]);
   const [visibleCount, setVisibleCount] = useState(10);
   
-  const [artistTopTracks, setArtistTopTracks] = useState(null); // { artistName, tracks }
-  
   const [featured, setFeatured]     = useState([]);
   const [featLoading, setFeatLoading] = useState(true);
   
@@ -787,7 +876,16 @@ export default function App() {
   const [saved, setSavedState]      = useState(getSaved);
   const [activeTab, setActiveTab]   = useState('home');     // 'home' | 'saved'
   const [view, setView]             = useState('main');     // 'main' | 'terms' | 'privacy'
+  
+  const [routeHash, setRouteHash] = useState(window.location.hash);
+  const [selectedArtistData, setSelectedArtistData] = useState(null);
   const searchRef = useRef(null);
+
+  useEffect(() => {
+    const handleHash = () => setRouteHash(window.location.hash);
+    window.addEventListener('hashchange', handleHash);
+    return () => window.removeEventListener('hashchange', handleHash);
+  }, []);
 
   const openView = (v) => { setView(v); window.scrollTo({ top: 0 }); };
 
@@ -858,7 +956,6 @@ export default function App() {
     setSearchResults(null);
     setSearchArtists([]);
     setError('');
-    setArtistTopTracks(null);
     setVisibleCount(10);
   }, [query]);
 
@@ -867,7 +964,6 @@ export default function App() {
     const q = debouncedQuery.trim();
     if (q.length < 3) return;
     if (normalizeQuery(q) === lastQueryRef.current) return;
-    setArtistTopTracks(null);
     performSearch(q);
   }, [debouncedQuery]);
 
@@ -875,7 +971,6 @@ export default function App() {
   const submitSearch = () => {
     const q = query.trim();
     if (q.length < 3 || normalizeQuery(q) === lastQueryRef.current) return;
-    setArtistTopTracks(null);
     performSearch(q);
   };
 
@@ -912,19 +1007,9 @@ export default function App() {
     }
   };
 
-  const handleArtistClick = async (artist) => {
-    setError('');
-    setLoading(true);
-    setSearchArtists([]); // hide suggestions
-    lastQueryRef.current = '';
-    try {
-      const tracks = await apiArtistTopTracks(artist.id, artist.name);
-      setArtistTopTracks({ artistName: artist.name, tracks });
-    } catch (err) {
-      setError(err.message || 'Failed to load artist top tracks.');
-    } finally {
-      setLoading(false);
-    }
+  const handleArtistClick = (artist) => {
+    setSelectedArtistData(artist);
+    window.location.hash = `#/artist/${artist.id}`;
   };
 
   const clearSearch = () => {
@@ -940,10 +1025,6 @@ export default function App() {
     contentLayout = 'saved';
     displayTracks = saved;
     headingText = `Saved (${saved.length})`;
-  } else if (artistTopTracks) {
-    contentLayout = 'results';
-    displayTracks = artistTopTracks.tracks;
-    headingText = `Top songs by ${artistTopTracks.artistName}`;
   } else if (searchResults !== null) {
     contentLayout = 'results';
     displayTracks = searchResults;
@@ -1060,10 +1141,20 @@ export default function App() {
         </div>
 
         {/* Dynamic Content Section */}
+        {routeHash.startsWith('#/artist/') ? (
+          <ArtistPage 
+            artistId={routeHash.replace('#/artist/', '').split('?')[0]} 
+            initialData={selectedArtistData} 
+            onBack={() => { window.history.back(); }} 
+            onPlay={setNowPlaying} 
+            toggleSave={toggleSave} 
+            isSaved={isSaved} 
+          />
+        ) : (
         <div className="content-section">
           
           {/* Artist Suggestions (Only show when searching and artists found) */}
-          {activeTab === 'home' && searchArtists.length > 0 && !artistTopTracks && (
+          {activeTab === 'home' && searchArtists.length > 0 && (
             <div className="suggestions-section">
               <div className="section-header">
                 <h3>Suggestions</h3>
@@ -1078,18 +1169,13 @@ export default function App() {
           )}
 
           {/* Tracks Heading */}
-          {(displayTracks.length > 0 || contentLayout === 'featured' || artistTopTracks) && (
+          {(displayTracks.length > 0 || contentLayout === 'featured') && (
             <div className="section-header mt-4">
               <h3 className="capitalize-first">{headingText}</h3>
             </div>
           )}
 
           {/* Empty State */}
-          {artistTopTracks && displayTracks.length === 0 && (
-            <div className="empty-state">
-              <p>No top tracks found for this artist.</p>
-            </div>
-          )}
           {activeTab === 'saved' && saved.length === 0 && (
             <div className="empty-state">
               <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity=".25">
@@ -1123,15 +1209,26 @@ export default function App() {
           {/* Pagination & Fallback Buttons */}
           {contentLayout === 'results' && (
             <div className="search-actions" style={{ display: 'flex', flexDirection: 'column', gap: '15px', alignItems: 'center', marginTop: '30px', marginBottom: '20px' }}>
-              {totalTracks > visibleCount && (
-                <button className="install-btn" style={{ background: 'rgba(255,255,255,0.1)', color: '#fff' }} onClick={() => setVisibleCount(v => v + 10)}>Load more</button>
-              )}
-              {activeTab === 'home' && !artistTopTracks && (
-                <button className="install-btn" style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.2)', color: '#fff' }} onClick={() => performSearch(query, true)}>Not here? Search on Spotify</button>
+              
+              {displayTracks.length === 0 ? (
+                <div style={{textAlign: 'center'}}>
+                  <p style={{marginBottom: '15px'}}>No exact match. Try adding the artist name.</p>
+                  <button className="install-btn" style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.2)', color: '#fff' }} onClick={() => performSearch(query, true)}>Search on Spotify</button>
+                </div>
+              ) : (
+                <>
+                  {totalTracks > visibleCount && (
+                    <button className="install-btn" style={{ background: 'rgba(255,255,255,0.1)', color: '#fff' }} onClick={() => setVisibleCount(v => v + 10)}>Load more</button>
+                  )}
+                  {activeTab === 'home' && (
+                    <button className="install-btn" style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.2)', color: '#fff' }} onClick={() => performSearch(query, true)}>Not here? Search on Spotify</button>
+                  )}
+                </>
               )}
             </div>
           )}
         </div>
+        )}
 
         <AboutSection />
         <HowItWorks />

@@ -62,25 +62,106 @@ export function parseQuery(q) {
   return { cleaned, splits };
 }
 
-export function stringSimilarity(s1, s2) {
-  if (!s1 || !s2) return 0;
-  if (s1 === s2) return 1;
-  const getBigrams = (str) => {
-    const bigrams = new Set();
-    for (let i = 0; i < str.length - 1; i++) {
-      bigrams.add(str.slice(i, i + 2));
+export function jaroWinkler(s1, s2) {
+  if (s1 === s2) return 1.0;
+  const len1 = s1.length;
+  const len2 = s2.length;
+  if (len1 === 0 || len2 === 0) return 0.0;
+  
+  const matchDistance = Math.floor(Math.max(len1, len2) / 2) - 1;
+  const s1Matches = new Array(len1).fill(false);
+  const s2Matches = new Array(len2).fill(false);
+  
+  let matches = 0;
+  let transpositions = 0;
+  
+  for (let i = 0; i < len1; i++) {
+    const start = Math.max(0, i - matchDistance);
+    const end = Math.min(i + matchDistance + 1, len2);
+    for (let j = start; j < end; j++) {
+      if (!s2Matches[j] && s1[i] === s2[j]) {
+        s1Matches[i] = true;
+        s2Matches[j] = true;
+        matches++;
+        break;
+      }
     }
-    return bigrams;
-  };
-  const b1 = getBigrams(s1);
-  const b2 = getBigrams(s2);
-  if (b1.size === 0 && b2.size === 0) return 1;
-  if (b1.size === 0 || b2.size === 0) return 0;
-  let intersection = 0;
-  for (const b of b1) {
-    if (b2.has(b)) intersection++;
   }
-  return (2.0 * intersection) / (b1.size + b2.size);
+  
+  if (matches === 0) return 0.0;
+  
+  let k = 0;
+  for (let i = 0; i < len1; i++) {
+    if (s1Matches[i]) {
+      while (!s2Matches[k]) k++;
+      if (s1[i] !== s2[k]) transpositions++;
+      k++;
+    }
+  }
+  
+  const jaro = ((matches / len1) + (matches / len2) + ((matches - transpositions / 2) / matches)) / 3.0;
+  
+  let prefix = 0;
+  for (let i = 0; i < Math.min(len1, len2, 4); i++) {
+    if (s1[i] === s2[i]) prefix++;
+    else break;
+  }
+  
+  return jaro + prefix * 0.1 * (1.0 - jaro);
+}
+
+export function stringSimilarity(str1, str2) {
+  if (str1 === str2) return 1.0;
+  if (!str1 || !str2 || str1.length < 2 || str2.length < 2) return 0.0;
+  const bigrams = (s) => {
+    let bg = [];
+    for (let i = 0; i < s.length - 1; i++) bg.push(s.substring(i, i+2));
+    return bg;
+  };
+  const bg1 = bigrams(str1);
+  const bg2 = bigrams(str2);
+  const total = bg1.length + bg2.length;
+  let intersection = 0;
+  for (let i = 0; i < bg1.length; i++) {
+    for (let j = 0; j < bg2.length; j++) {
+      if (bg1[i] === bg2[j]) {
+        intersection++;
+        bg2[j] = null;
+        break;
+      }
+    }
+  }
+  return (2.0 * intersection) / total;
+}
+
+export function generateSpellingVariants(q) {
+  if (!q) return [];
+  const variants = new Set();
+  
+  const rules = [
+    [/w/g, 'v'], [/v/g, 'w'],
+    [/th/g, 't'], [/t/g, 'th'],
+    [/dh/g, 'd'], [/d/g, 'dh'],
+    [/bh/g, 'b'], [/b/g, 'bh'],
+    [/aa/g, 'a'], [/oo/g, 'u'], [/ee/g, 'i'],
+    [/h\b/g, '']
+  ];
+  
+  for (const [pattern, replacement] of rules) {
+    const variant = q.replace(pattern, replacement);
+    if (variant !== q) {
+      variants.add(variant);
+    }
+  }
+  
+  let allReplaced = q;
+  for (const [pattern, replacement] of rules) {
+    if (pattern.toString().startsWith('/w/') || pattern.toString().startsWith('/v/')) continue; // Avoid toggling back and forth
+    allReplaced = allReplaced.replace(pattern, replacement);
+  }
+  if (allReplaced !== q) variants.add(allReplaced);
+  
+  return Array.from(variants).slice(0, 3); // Max 3
 }
 
 export function scoreTrack(track, queryInfo) {
@@ -91,9 +172,13 @@ export function scoreTrack(track, queryInfo) {
   let bestScore = 0;
   
   const scorePair = (t, a, qTitle, qArtist) => {
-    const titleSim = stringSimilarity(t, qTitle);
-    const artistSim = stringSimilarity(a, qArtist);
-    return titleSim * 0.7 + artistSim * 0.3;
+    const titleDice = stringSimilarity(t, qTitle);
+    const artistDice = stringSimilarity(a, qArtist);
+    const titleJaro = jaroWinkler(t, qTitle);
+    
+    // Combine Jaro and Dice for title
+    const titleSim = titleDice * 0.4 + titleJaro * 0.6;
+    return titleSim * 0.7 + artistDice * 0.3;
   };
 
   if (splits.length > 0) {
@@ -108,20 +193,25 @@ export function scoreTrack(track, queryInfo) {
     bestScore = Math.max(s1, s2, s3);
   }
 
+  // Exact match bonus
   if (splits.length > 0) {
     for (const split of splits) {
       if (tTitle === split.title && tArtist === split.artist) bestScore += 0.5;
-      else if (tTitle === split.title) bestScore += 0.2;
-      else if (tArtist === split.artist) bestScore += 0.1;
+      else if (tTitle === split.title) bestScore += 0.3;
+      else if (tArtist === split.artist) bestScore += 0.15;
     }
   } else {
-    if (tTitle === cleaned || tArtist === cleaned) bestScore += 0.2;
-    if (cleaned.includes(tTitle)) bestScore += 0.1;
+    if (tTitle === cleaned) bestScore += 0.4;
+    else if (tTitle.includes(cleaned) || cleaned.includes(tTitle)) bestScore += 0.15;
+    
+    if (tArtist === cleaned) bestScore += 0.2;
+    else if (tArtist.includes(cleaned) || cleaned.includes(tArtist)) bestScore += 0.1;
   }
 
+  // Penalize unwanted versions unless explicitly in query
   const lowerTrackTitle = (track.title || '').toLowerCase();
   const lowerQuery = (cleaned || '').toLowerCase();
-  const unwanted = ['remix', 'live', 'karaoke', 'cover', 'instrumental', 'acoustic', 'edit'];
+  const unwanted = ['remix', 'live', 'karaoke', 'cover', 'instrumental', 'acoustic', 'edit', 'tribute'];
   
   for (const word of unwanted) {
     if (lowerTrackTitle.includes(word) && !lowerQuery.includes(word)) {
@@ -131,3 +221,4 @@ export function scoreTrack(track, queryInfo) {
   
   return bestScore;
 }
+

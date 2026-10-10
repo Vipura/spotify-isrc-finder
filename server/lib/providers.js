@@ -89,6 +89,15 @@ export function createProviders({ fetchFn, stats, clientId, clientSecret, now = 
       const d = await deezerGet(`/search?q=${encodeURIComponent(q)}${strictParam}&limit=${limit}`, 'search');
       return (d?.data || []).filter((t) => t && t.id).map(mapDeezer);
     },
+    async artistSearch(q, limit = 10) {
+      const d = await deezerGet(`/search/artist?q=${encodeURIComponent(q)}&limit=${limit}`, 'artistSearch');
+      return (d?.data || []).filter(a => a && a.id).map(a => ({
+        id: String(a.id),
+        name: a.name,
+        imageUrl: a.picture_xl || a.picture_big || a.picture_medium || null,
+        nb_fan: a.nb_fan || 0,
+      }));
+    },
     /** Full track (includes ISRC + preview). Returns null if not found. */
     async track(id) {
       const d = await deezerGet(`/track/${encodeURIComponent(id)}`, 'track');
@@ -98,6 +107,16 @@ export function createProviders({ fetchFn, stats, clientId, clientSecret, now = 
     async artistTop(artistId, limit = 10) {
       const d = await deezerGet(`/artist/${encodeURIComponent(artistId)}/top?limit=${limit}`, 'artistTop');
       return (d?.data || []).filter((t) => t && t.id).map(mapDeezer);
+    },
+    async artist(artistId) {
+      const d = await deezerGet(`/artist/${encodeURIComponent(artistId)}`, 'artist');
+      if (!d || !d.id) return null;
+      return {
+        id: String(d.id),
+        name: d.name,
+        imageUrl: d.picture_xl || d.picture_big || d.picture_medium || null,
+        nb_fan: d.nb_fan || 0,
+      };
     },
     async chart(limit = 8) {
       const d = await deezerGet(`/chart/0/tracks?limit=${limit}`, 'chart');

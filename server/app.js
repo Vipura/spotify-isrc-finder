@@ -3,7 +3,7 @@ import cors from 'cors';
 import { createProviders } from './lib/providers.js';
 import { createStore } from './lib/cache.js';
 import { Stats, isProviderDown } from './lib/resilience.js';
-import { normalizeIsrc, norm, scoreTrack, parseQuery } from './lib/isrc.js';
+import { normalizeIsrc, norm, scoreTrack, parseQuery, cleanQuery, jaroWinkler, generateSpellingVariants } from './lib/isrc.js';
 
 const DAY = 24 * 60 * 60 * 1000;
 const TTL = {
@@ -23,7 +23,7 @@ const BUSY_MSG = 'Our music sources are busy right now. Please try again in a mo
  * Builds the Express app. Providers are reachable only through `fetchFn`
  * (injected) so tests can mock Deezer / Spotify / iTunes completely.
  */
-export function createApp({ fetchFn, clientId, clientSecret, store = createStore(), now = Date.now, statsToken = '' }) {
+export function createApp({ fetchFn, clientId, clientSecret, store = createStore(), now = Date.now, statsToken = '', minScore = 0.45 }) {
   const { cache, state } = store;
   const stats = new Stats(state.stats);
   state.stats = stats.data;
@@ -70,6 +70,10 @@ export function createApp({ fetchFn, clientId, clientSecret, store = createStore
   /** Best known title/artist/duration for an id without any external call. */
   const knownRef = (id) => cache.get(`track:${id}`, { stale: true }) || cache.get(`meta:${id}`, { stale: true });
 
+  const MIN_SCORE = minScore;
+  const SPOTIFY_FALLBACK_THRESHOLD = 0.60;
+  const ARTIST_MIN_SCORE = 0.55;
+
   // ─── GET /api/search?q= ───────────────────────────────────────────────
   app.get('/api/search', route(async (req, res) => {
     const q = String(req.query.q || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -86,84 +90,140 @@ export function createApp({ fetchFn, clientId, clientSecret, store = createStore
     let ttl = TTL.search;
 
     const queryInfo = parseQuery(q);
+    const variants = generateSpellingVariants(queryInfo.cleaned);
+
+    let spotifyUsed = false;
+    let subQueries = 0;
+    let bestScore = 0;
 
     if (forceSpotify) {
       try {
-        const items = (await spotify.search(q, 10)).filter((t) => t.isrc);
+        let spQ = `track:"${queryInfo.cleaned}"`;
+        if (queryInfo.splits.length > 0) spQ += ` artist:"${queryInfo.splits[0].artist}"`;
+        const items = (await spotify.search(spQ, 10)).filter((t) => t.isrc);
+        spotifyUsed = true;
+        subQueries++;
         items.forEach((t) => { rememberTrack(toRecord(t, 'spotify')); rememberMeta(t.id ? [t] : []); });
         result = { tracks: items.map((t) => toPublic({ ...t, source: 'spotify' })), artists: [], source: 'spotify' };
       } catch (e) { if (!isProviderDown(e)) throw e; spotifyDown = true; }
     } else {
       try {
         const dPromises = [];
+        dPromises.push(deezer.search(`track:"${queryInfo.cleaned}"`, 50, true));
+        dPromises.push(deezer.search(queryInfo.cleaned, 50, true));
+        subQueries += 2;
+
         if (queryInfo.splits.length > 0) {
-          const split = queryInfo.splits[0];
-          dPromises.push(deezer.search(`artist:"${split.artist}" track:"${split.title}"`, 25, true));
-        } else {
-          dPromises.push(Promise.resolve([]));
+          for (const split of queryInfo.splits) {
+            dPromises.push(deezer.search(`artist:"${split.artist}" track:"${split.title}"`, 25, true));
+            subQueries++;
+          }
         }
         
-        dPromises.push(deezer.search(queryInfo.cleaned, 50, true));
-        dPromises.push(deezer.search(queryInfo.cleaned, 50, false));
+        for (const v of variants) {
+          dPromises.push(deezer.search(v, 25, true));
+          subQueries++;
+        }
 
-        const [resA, resB, resC] = await Promise.all(dPromises);
+        const dResults = await Promise.all(dPromises);
+        const artistProm = deezer.artistSearch(queryInfo.cleaned, 10).catch(() => []);
 
         const trackMap = new Map();
-        [...resA, ...resB, ...resC].forEach(t => {
+        dResults.flat().forEach(t => {
           if (!trackMap.has(t.id)) trackMap.set(t.id, t);
         });
 
-        let items = Array.from(trackMap.values());
+        let scored = Array.from(trackMap.values()).map(t => ({ track: t, score: scoreTrack(t, queryInfo) }));
+        scored.sort((a, b) => b.score - a.score);
+        
+        bestScore = scored.length > 0 ? scored[0].score : 0;
+        let exactMatch = scored.some(s => cleanQuery(s.track.title) === queryInfo.cleaned || queryInfo.splits.some(split => cleanQuery(s.track.title) === split.title));
 
-        if (items.length > 0) {
-          const scored = items.map(t => ({ track: t, score: scoreTrack(t, queryInfo) }));
-          scored.sort((a, b) => b.score - a.score);
-          
-          let bestScore = scored[0].score;
+        if (bestScore < SPOTIFY_FALLBACK_THRESHOLD) {
+          try {
+            const fuzzy = await deezer.search(queryInfo.cleaned, 50, false);
+            subQueries++;
+            fuzzy.forEach(t => {
+              if (!trackMap.has(t.id)) {
+                trackMap.set(t.id, t);
+                scored.push({ track: t, score: scoreTrack(t, queryInfo) });
+              }
+            });
+            scored.sort((a, b) => b.score - a.score);
+            bestScore = scored.length > 0 ? scored[0].score : 0;
+            exactMatch = scored.some(s => cleanQuery(s.track.title) === queryInfo.cleaned || queryInfo.splits.some(split => cleanQuery(s.track.title) === split.title));
+          } catch (e) { /* ignore */ }
+        }
 
-          if (bestScore < 0.6) {
-            try {
-              const spItems = (await spotify.search(q, 10)).filter(t => t.isrc);
-              const scoredSp = spItems.map(t => ({ track: { ...t, source: 'spotify' }, score: scoreTrack(t, queryInfo) }));
-              scored.push(...scoredSp);
-              scored.sort((a, b) => b.score - a.score);
-            } catch (e) { if (!isProviderDown(e)) throw e; }
-          }
-          
-          items = scored.map(s => s.track);
-
-          const finalTracks = items.map(t => {
-            const isSp = t.source === 'spotify';
-            if (isSp) {
-              const rec = toRecord(t, 'spotify');
-              rememberTrack(rec);
-              rememberMeta(t.id ? [t] : []);
-              return toPublic({ ...t, source: 'spotify' });
-            } else {
-              return toPublic({ ...t, isrc: null, source: 'deezer' });
+        if (bestScore < SPOTIFY_FALLBACK_THRESHOLD || !exactMatch) {
+          try {
+            let spQ = `track:"${queryInfo.cleaned}"`;
+            if (queryInfo.splits.length > 0) {
+              spQ += ` artist:"${queryInfo.splits[0].artist}"`;
             }
-          });
+            const spItems = (await spotify.search(spQ, 10)).filter(t => t.isrc);
+            spotifyUsed = true;
+            
+            let scoredSp = spItems.map(t => ({ track: { ...t, source: 'spotify' }, score: scoreTrack(t, queryInfo) }));
+            let bestSp = scoredSp.length > 0 ? Math.max(...scoredSp.map(s => s.score)) : 0;
+            
+            if (bestSp < SPOTIFY_FALLBACK_THRESHOLD && variants.length > 0) {
+              const spItems2 = (await spotify.search(`track:"${variants[0]}"`, 10)).filter(t => t.isrc);
+              const scoredSp2 = spItems2.map(t => ({ track: { ...t, source: 'spotify' }, score: scoreTrack(t, queryInfo) }));
+              scoredSp.push(...scoredSp2);
+            }
+            
+            scored.push(...scoredSp);
+            scored.sort((a, b) => b.score - a.score);
+          } catch (e) { if (!isProviderDown(e)) throw e; spotifyDown = true; }
+        }
 
-          const dzItems = items.filter(t => t.source !== 'spotify');
-          rememberMeta(dzItems);
+        scored = scored.filter(s => s.score >= MIN_SCORE);
+        
+        const items = scored.map(s => s.track);
 
-          const seen = new Set();
-          const artists = [];
-          for (const t of dzItems) {
-            if (!t.artistId || seen.has(t.artistId)) continue;
-            seen.add(t.artistId);
-            artists.push({ id: t.artistId, name: t.artist, imageUrl: t.artistImage });
-            if (artists.length === 5) break;
+        const finalTracks = items.map(t => {
+          const isSp = t.source === 'spotify';
+          if (isSp) {
+            const rec = toRecord(t, 'spotify');
+            rememberTrack(rec);
+            rememberMeta(t.id ? [t] : []);
+            return toPublic({ ...t, source: 'spotify' });
+          } else {
+            return toPublic({ ...t, isrc: null, source: 'deezer' });
           }
+        });
 
-          const hasSpotify = items.some(t => t.source === 'spotify');
-          result = { tracks: finalTracks, artists, source: hasSpotify ? 'mixed' : 'deezer' };
+        const dzItems = items.filter(t => t.source !== 'spotify');
+        rememberMeta(dzItems);
+
+        const rawArtists = await artistProm;
+        const scoredArtists = rawArtists.map(a => {
+           let sim = jaroWinkler(cleanQuery(a.name), queryInfo.cleaned);
+           if (queryInfo.splits.length > 0) {
+              const artistSim = Math.max(...queryInfo.splits.map(s => jaroWinkler(cleanQuery(a.name), s.artist)));
+              sim = Math.max(sim, artistSim);
+           }
+           return { artist: a, score: sim };
+        }).filter(a => a.score >= ARTIST_MIN_SCORE).sort((a, b) => b.score - a.score);
+        
+        const artists = scoredArtists.map(a => a.artist);
+
+        const hasSpotify = items.some(t => t.source === 'spotify');
+        if (items.length === 0 && (deezerDown || spotifyDown)) {
+          result = null;
+        } else {
+          result = { tracks: finalTracks, artists, source: hasSpotify ? (artists.length === 0 && items.every(t => t.source === 'spotify') ? 'spotify' : 'mixed') : 'deezer' };
         }
       } catch (e) { if (!isProviderDown(e)) throw e; deezerDown = true; }
 
       if (!result) {
         try {
-          const items = (await spotify.search(q, 10)).filter((t) => t.isrc);
+          let spQ = `track:"${queryInfo.cleaned}"`;
+          if (queryInfo.splits.length > 0) spQ += ` artist:"${queryInfo.splits[0].artist}"`;
+          const items = (await spotify.search(spQ, 10)).filter((t) => t.isrc);
+          spotifyUsed = true;
+          subQueries++;
           items.forEach((t) => { rememberTrack(toRecord(t, 'spotify')); rememberMeta(t.id ? [t] : []); });
           result = { tracks: items.map((t) => toPublic({ ...t, source: 'spotify' })), artists: [], source: 'spotify' };
           ttl = deezerDown ? TTL.searchFallback : (items.length ? TTL.search : 60 * 60_000);
@@ -176,8 +236,49 @@ export function createApp({ fetchFn, clientId, clientSecret, store = createStore
       if (stale) { cacheHit('searchStale'); return res.json({ ...stale, source: 'cache', stale: true }); }
       return busy(res, deezerDown ? breakers.deezer.status() : breakers.spotify.status());
     }
+    
+    console.log(`[search] q="${q}" subQueries=${subQueries} results=${result.tracks.length} bestScore=${bestScore.toFixed(2)} spotifyUsed=${spotifyUsed}`);
     cache.set(key, result, ttl);
     res.json(result);
+  }));
+
+  // ─── Artist detail ──────────────────────────────────────────────
+  app.get('/api/artists/:id', route(async (req, res) => {
+    const id = req.params.id;
+    const name = req.query.name;
+    const isDeezerId = /^\d+$/.test(id);
+    
+    const hit = cache.get(`artist:${id}`);
+    if (hit) { cacheHit('artist'); return res.json({ ...hit, source: 'cache' }); }
+    
+    try {
+      let artist = null;
+      if (isDeezerId) {
+        artist = await deezer.artist(id);
+      }
+      
+      if (!artist && name) {
+        const dArtists = await deezer.artistSearch(name, 5).catch(() => []);
+        const match = dArtists.find(a => cleanQuery(a.name) === cleanQuery(name));
+        if (match) artist = match;
+      }
+      
+      if (!artist) {
+         if (name) {
+            artist = { id, name, imageUrl: null, nb_fan: 0, isSpotifyOnly: true };
+         } else {
+            return res.status(404).json({ error: 'not_found', message: 'Artist not found.' });
+         }
+      }
+
+      cache.set(`artist:${id}`, artist, 7 * DAY);
+      res.json(artist);
+    } catch(e) {
+      if (!isProviderDown(e)) throw e;
+      const stale = cache.get(`artist:${id}`, { stale: true });
+      if (stale) { cacheHit('artistStale'); return res.json({ ...stale, source: 'cache', stale: true }); }
+      return busy(res, breakers.deezer.status());
+    }
   }));
 
   // ─── Track resolution (shared by /api/track and /api/isrc) ───────────
