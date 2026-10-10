@@ -194,8 +194,9 @@ async function apiFeatured() {
   return { tracks: (data.tracks || []).map(toUi), expiresAt: data.expiresAt };
 }
 
-async function apiArtistTopTracks(id) {
-  const data = await safeFetchJson(`${BASE}/api/artists/${id}/top-tracks`);
+async function apiArtistTopTracks(id, name) {
+  const url = name ? `${BASE}/api/artists/${id}/top-tracks?name=${encodeURIComponent(name)}` : `${BASE}/api/artists/${id}/top-tracks`;
+  const data = await safeFetchJson(url);
   return (data.tracks || []).map(toUi);
 }
 
@@ -913,7 +914,7 @@ export default function App() {
     setSearchArtists([]); // hide suggestions
     lastQueryRef.current = '';
     try {
-      const tracks = await apiArtistTopTracks(artist.id);
+      const tracks = await apiArtistTopTracks(artist.id, artist.name);
       setArtistTopTracks({ artistName: artist.name, tracks });
     } catch (err) {
       setError(err.message || 'Failed to load artist top tracks.');
@@ -1068,13 +1069,18 @@ export default function App() {
           )}
 
           {/* Tracks Heading */}
-          {(displayTracks.length > 0 || contentLayout === 'featured') && (
+          {(displayTracks.length > 0 || contentLayout === 'featured' || artistTopTracks) && (
             <div className="section-header mt-4">
               <h3 className="capitalize-first">{headingText}</h3>
             </div>
           )}
 
           {/* Empty State */}
+          {artistTopTracks && displayTracks.length === 0 && (
+            <div className="empty-state">
+              <p>No top tracks found for this artist.</p>
+            </div>
+          )}
           {activeTab === 'saved' && saved.length === 0 && (
             <div className="empty-state">
               <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity=".25">

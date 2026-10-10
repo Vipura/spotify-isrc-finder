@@ -363,15 +363,32 @@ export function createApp({ fetchFn, clientId, clientSecret, store = createStore
   // ─── Artist top tracks (Deezer, free) ────────────────────────────────
   app.get('/api/artists/:id/top-tracks', route(async (req, res) => {
     const id = req.params.id;
+    const name = req.query.name;
     if (!/^\d+$/.test(id)) return res.status(400).json({ error: 'bad_id', message: 'Invalid artist id.' });
     const hit = cache.get(`top:${id}`);
     if (hit) { cacheHit('top'); return res.json({ ...hit, source: 'cache' }); }
     try {
-      const items = await deezer.artistTop(id, 10);
-      rememberMeta(items);
-      const payload = { tracks: items.map((t) => toPublic({ ...t, isrc: null, source: 'deezer' })) };
+      let items = await deezer.artistTop(id, 10);
+      let source = 'deezer';
+
+      if (items.length === 0 && name) {
+        try {
+          const spotifyItems = await spotify.search(`artist:"${name}"`, 10);
+          items = spotifyItems.filter(t => t.isrc);
+          items.forEach(t => { const rec = toRecord(t, 'spotify'); rememberTrack(rec); });
+          source = 'spotify';
+        } catch (e) {
+          if (!isProviderDown(e)) throw e;
+        }
+      }
+
+      if (items.length > 0 && source === 'deezer') {
+        rememberMeta(items);
+      }
+      
+      const payload = { tracks: items.map((t) => toPublic({ ...t, isrc: source === 'spotify' ? t.isrc : null, source })) };
       cache.set(`top:${id}`, payload, TTL.top);
-      res.json({ ...payload, source: 'deezer' });
+      res.json({ ...payload, source });
     } catch (e) {
       if (!isProviderDown(e)) throw e;
       const stale = cache.get(`top:${id}`, { stale: true });
