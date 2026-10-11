@@ -372,19 +372,15 @@ function useIsrc(track) {
   };
 }
 
-function CopyChip({ text, label }) {
-  const [done, setDone] = useState(false);
+function IsrcCodeBadge({ text }) {
   return (
-    <button type="button" className={`isrc-chip ${done ? 'copied' : ''}`} onClick={() => copyToClipboard(text, setDone)} title="Copy ISRC">
-      {done ? '\u2713 Copied' : (label || text)}
-    </button>
+    <span className="isrc-chip isrc-chip-static" title={`ISRC: ${text}`}>
+      {text}
+    </span>
   );
 }
 
-const FB_KEY = 'isrc_feedback_given';
-const readFb = () => { try { return JSON.parse(localStorage.getItem(FB_KEY)) || {}; } catch { return {}; } };
 const fmtDur = (ms) => ms ? `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}` : '';
-const srcLabel = (s) => (s === 'spotify' ? 'Spotify' : 'Deezer');
 
 function IsrcExtras({ track, code }) {
   const [open, setOpen] = useState(false);
@@ -394,15 +390,6 @@ function IsrcExtras({ track, code }) {
   const [sp, setSp] = useState(null);
   const [spState, setSpState] = useState('idle');
   const [msg, setMsg] = useState('');
-  const [fbMap, setFbMap] = useState(readFb);
-  const given = fbMap[code.isrc];
-
-  const sendFb = async (result) => {
-    const next = { ...fbMap, [code.isrc]: result };
-    setFbMap(next);
-    try { localStorage.setItem(FB_KEY, JSON.stringify(next)); } catch { /* ignore */ }
-    sendFeedback(code.isrc, code.source, result);
-  };
 
   const loadAlts = async () => {
     setAltsState('loading'); setMsg('');
@@ -427,16 +414,7 @@ function IsrcExtras({ track, code }) {
   return (
     <div className="isrc-extra">
       <div className="isrc-extra-row">
-        <span className="isrc-src">via {srcLabel(code.source)}</span>
         <button type="button" className="isrc-link" onClick={() => setOpen(o => !o)} aria-expanded={open}>Try another code</button>
-        {given ? (
-          <span className="fb-thanks">{given === 'worked' ? '\u2713 Thanks \u2014 glad it worked' : 'Thanks for the feedback'}</span>
-        ) : (
-          <span className="fb-group">
-            <button type="button" className="fb-btn fb-yes" onClick={() => sendFb('worked')}>Worked on Instagram</button>
-            <button type="button" className="fb-btn fb-no" onClick={() => sendFb('failed')}>Didn't work</button>
-          </span>
-        )}
       </div>
 
       {open && (
@@ -456,7 +434,7 @@ function IsrcExtras({ track, code }) {
           {sp && (sp.track && sp.differs ? (
             <div className="isrc-alt">
               <div className="isrc-alt-info"><strong>Spotify's code</strong></div>
-              <CopyChip text={sp.track.isrc} />
+              <IsrcCodeBadge text={sp.track.isrc} />
               <button type="button" className="isrc-link" onClick={() => code.setCode(sp.track.isrc, 'spotify')}>Use this</button>
             </div>
           ) : (
@@ -474,7 +452,7 @@ function IsrcExtras({ track, code }) {
                 </div>
                 {c?.status === 'ok' ? (
                   <>
-                    <CopyChip text={c.isrc} />
+                    <IsrcCodeBadge text={c.isrc} />
                     {c.isrc !== code.isrc && <button type="button" className="isrc-link" onClick={() => code.setCode(c.isrc, c.source)}>Use this</button>}
                   </>
                 ) : (
@@ -493,7 +471,6 @@ function IsrcExtras({ track, code }) {
 
 // ─── Track Grid Card (Vertical - for Popular on Spotify) ──────────────
 function TrackGridCard({ track, onPlay, onSave, isSaved }) {
-  const [copied, setCopied] = useState(false);
   const [igCopied, setIgCopied] = useState(false);
   const code = useIsrc(track);
 
@@ -530,16 +507,28 @@ function TrackGridCard({ track, onPlay, onSave, isSaved }) {
 
         {code.isrc ? (
           <div className="tc-actions">
-            <div className={`tc-isrc-badge ${copied ? 'copied' : ''}`} onClick={() => copyToClipboard(code.isrc, setCopied)} title="Copy ISRC">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                {copied ? <polyline points="20 6 9 17 4 12"/> : <><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></>}
-              </svg>
-              <span>{code.isrc}</span>
+            <div className="tc-isrc-badge" title={`ISRC: ${code.isrc}`}>
+              <span className="tc-isrc-text">{code.isrc}</span>
             </div>
             
-            <button className={`tc-ig-btn ${igCopied ? 'copied' : ''}`} onClick={() => copyToClipboard(`isrc:${code.isrc}`, setIgCopied)} title="Copy ISRC for Instagram">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>
-              <span>{igCopied ? '\u2713' : 'for IG'}</span>
+            <button
+              type="button"
+              className={`tc-ig-btn ${igCopied ? 'copied' : ''}`}
+              onClick={() => copyToClipboard(`isrc:${code.isrc}`, setIgCopied)}
+              title="Copy ISRC for Instagram"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                {igCopied ? (
+                  <polyline points="20 6 9 17 4 12"/>
+                ) : (
+                  <>
+                    <rect x="2" y="2" width="20" height="20" rx="5"/>
+                    <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
+                    <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/>
+                  </>
+                )}
+              </svg>
+              <span>{igCopied ? '✓ Copied!' : 'Copy ISRC for IG'}</span>
             </button>
           </div>
         ) : (
@@ -558,7 +547,6 @@ function TrackGridCard({ track, onPlay, onSave, isSaved }) {
 
 // ─── Track List Card (Horizontal - for Search Results) ─────────────────
 function TrackListCard({ track, onPlay, onSave, isSaved }) {
-  const [copied, setCopied] = useState(false);
   const [igCopied, setIgCopied] = useState(false);
   const code = useIsrc(track);
 
@@ -582,16 +570,28 @@ function TrackListCard({ track, onPlay, onSave, isSaved }) {
       <div className="tl-actions">
         {code.isrc ? (
           <>
-            <div className={`tl-isrc-badge ${copied ? 'copied' : ''}`} onClick={() => copyToClipboard(code.isrc, setCopied)} title="Copy ISRC">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                {copied ? <polyline points="20 6 9 17 4 12"/> : <><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></>}
-              </svg>
-              <span>{code.isrc}</span>
+            <div className="tl-isrc-badge" title={`ISRC: ${code.isrc}`}>
+              <span className="tl-isrc-text">{code.isrc}</span>
             </div>
             
-            <button className={`tl-btn tl-ig ${igCopied ? 'copied' : ''}`} onClick={() => copyToClipboard(`isrc:${code.isrc}`, setIgCopied)} title="Copy ISRC for Instagram">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>
-              <span className="tl-ig-label">{igCopied ? '\u2713' : 'for IG'}</span>
+            <button
+              type="button"
+              className={`tl-btn tl-ig ${igCopied ? 'copied' : ''}`}
+              onClick={() => copyToClipboard(`isrc:${code.isrc}`, setIgCopied)}
+              title="Copy ISRC for Instagram"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                {igCopied ? (
+                  <polyline points="20 6 9 17 4 12"/>
+                ) : (
+                  <>
+                    <rect x="2" y="2" width="20" height="20" rx="5"/>
+                    <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
+                    <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/>
+                  </>
+                )}
+              </svg>
+              <span className="tl-ig-label">{igCopied ? '✓ Copied!' : 'Copy ISRC for IG'}</span>
             </button>
           </>
         ) : (
@@ -653,7 +653,7 @@ function HowItWorks() {
         {[
           { n: 1, h: 'Search Anything', p: 'Type a song name, artist name, or paste a Spotify track URL in the search bar.' },
           { n: 2, h: 'Preview & Pick', p: 'Browse results, play 30-second previews, and select the exact track you need.' },
-          { n: 3, h: 'Copy ISRC', p: 'Click "Copy ISRC" for the raw code, or "For IG" to get isrc:CODE format for Instagram.' },
+          { n: 3, h: 'Copy ISRC for IG', p: 'Click "Copy ISRC for IG" to copy the isrc:CODE format ready to paste directly into Instagram.' },
           { n: 4, h: 'Save Favourites', p: 'Hit the heart icon to save tracks to your browser — they persist across sessions.' },
         ].map(({ n, h, p }) => (
           <div key={n} className="step-card">
